@@ -1,0 +1,64 @@
+# ─── Web Framework ────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+
+# ─── AI / LLM Orchestration ───────────────────────────────────────
+anthropic==0.28.0
+langgraph==0.1.19
+langchain-core==0.2.10
+langchain-anthropic==0.1.19
+
+# ─── Embeddings ───────────────────────────────────────────────────
+sentence-transformers==3.0.1
+torch==2.3.1
+numpy==1.26.4
+scikit-learn==1.5.0
+
+# ─── Vector Database ──────────────────────────────────────────────
+chromadb==0.5.3
+
+# ─── Document Parsing ─────────────────────────────────────────────
+pdfplumber==0.11.1
+PyMuPDF==1.24.5
+python-docx==1.1.2
+pytesseract==0.3.13
+Pillow==10.4.0
+langdetect==1.0.9
+
+# ─── Database ─────────────────────────────────────────────────────
+sqlalchemy==2.0.31
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+alembic==1.13.2
+
+# ─── Queue / Cache ────────────────────────────────────────────────
+redis==5.0.7
+celery==5.4.0
+
+# ─── String Matching ──────────────────────────────────────────────
+jellyfish==1.0.3
+rapidfuzz==3.9.4
+
+# ─── HTTP Client ──────────────────────────────────────────────────
+httpx==0.27.0
+aiohttp==3.9.5
+
+# ─── Data Validation ──────────────────────────────────────────────
+pydantic==2.8.2
+pydantic-settings==2.3.4
+email-validator==2.2.0
+
+# ─── Utilities ────────────────────────────────────────────────────
+python-dotenv==1.0.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+slowapi==0.1.9
+shap==0.46.0
+nltk==3.8.1
+
+# ─── Testing ──────────────────────────────────────────────────────
+pytest==8.2.2
+pytest-asyncio==0.23.7
+httpx==0.27.0
+factory-boy==3.3.0
