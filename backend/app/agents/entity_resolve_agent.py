@@ -1,3 +1,12 @@
+"""
+Agent 4: Entity Resolver
+- Anchor-first: explicit links = 100% confident
+- Leet-speak decoder (ni3av → nirav)
+- Jaro-Winkler fuzzy name matching
+- Bio/skill semantic similarity
+- NetworkX identity graph for multi-hop resolution
+- Platform adapter pattern (GitHub, LinkedIn, Stack Overflow)
+"""
 
 import re
 import time
