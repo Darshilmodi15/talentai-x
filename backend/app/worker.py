@@ -35,7 +35,7 @@ def process_resume_celery(self, job_id: str, file_path: str, file_name: str, fil
         from app.db.database import AsyncSessionLocal
         from app.services.candidate_service import save_candidate_from_state
         from app.db.models.models import ParseJob, ProcessingStatus
-        from datetime import datetime
+        from datetime import datetime, timezone
         import uuid
 
         state = await run_parse_pipeline(
@@ -50,8 +50,8 @@ def process_resume_celery(self, job_id: str, file_path: str, file_name: str, fil
             job = await db.get(ParseJob, uuid.UUID(job_id))
             if job:
                 job.status = ProcessingStatus.COMPLETED
-                job.completed_at = datetime.utcnow()
-                job.traces = state.get("traces", [])
+                job.completed_at = datetime.now(timezone.utc)
+                job.traces = list(state.get("traces", []))  # type: ignore
             await db.commit()
 
         return {"candidate_id": str(candidate_id), "status": "completed"}

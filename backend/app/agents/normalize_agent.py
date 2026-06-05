@@ -8,8 +8,8 @@ Agent 2: Skill Normalizer
 - Emerging skill detection
 """
 import time
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Optional, Any
 
 from app.core.pipeline_state import PipelineState, AgentTrace, SkillEntry
 from app.core.config import settings
@@ -277,14 +277,21 @@ def semantic_skill_lookup(skill: str) -> Optional[str]:
         model = get_embedding_model()
         collection = client.get_collection("skill_taxonomy")
 
-        embedding = model.encode(skill).tolist()
+        embedding_val = model.encode(skill)
+        embedding = getattr(embedding_val, "tolist", lambda: list(embedding_val))()  # type: ignore
         results = collection.query(
-            query_embeddings=[embedding],
+            query_embeddings=[embedding],  # type: ignore
             n_results=1,
         )
-        if results["distances"][0] and results["distances"][0][0] < 0.25:
+        distances = results.get("distances")
+        if distances and len(distances) > 0 and distances[0] and len(distances[0]) > 0 and distances[0][0] < 0.25:
             # ChromaDB uses L2 distance; < 0.25 ≈ cosine sim > 0.80
-            return results["metadatas"][0][0].get("canonical_name")
+            metadatas = results.get("metadatas")
+            if metadatas and len(metadatas) > 0 and metadatas[0] and len(metadatas[0]) > 0:
+                meta = metadatas[0][0]
+                if isinstance(meta, dict):
+                    name = meta.get("canonical_name")
+                    return str(name) if name is not None else None
         return None
     except Exception:
         return None
@@ -385,13 +392,14 @@ async def normalize_agent(state: PipelineState) -> PipelineState:
         state["emerging_skills_found"] = []
         status = "failed"
 
+    parsed_state = state.get("parsed") or {}
     quality = (
-        len(state["skills_canonical"]) / max(len(state.get("parsed", {}).get("skills", []) or []), 1)
+        len(state.get("skills_canonical", [])) / max(len(parsed_state.get("skills", []) or []), 1)
     )
 
     trace: AgentTrace = {
         "agent": "normalize_agent",
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
         "duration_ms": int((time.time() - started) * 1000),
         "status": status,
         "quality_score": min(quality, 1.0),

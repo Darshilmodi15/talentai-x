@@ -11,8 +11,8 @@ Agent 3: Semantic Matcher
 """
 import json
 import time
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Optional, Any
 
 from app.core.pipeline_state import PipelineState, AgentTrace, MatchedSkill
 from app.core.config import settings
@@ -143,11 +143,11 @@ def get_model():
 
 
 def embed_text(text: str) -> np.ndarray:
-    return get_model().encode([text[:2000]])[0]
+    return np.asarray(get_model().encode([text[:2000]])[0])
 
 
 def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-    return float(cosine_similarity([a], [b])[0][0])
+    return float(cosine_similarity([a], [b])[0][0])  # type: ignore
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -181,7 +181,7 @@ async def parse_job_description(jd: str) -> dict:
 
 def find_best_skill_match(
     jd_skill: str,
-    candidate_skills: list[dict],
+    candidate_skills: list[Any],
     threshold: float = 0.78,
 ) -> Optional[dict]:
     """
@@ -250,7 +250,7 @@ WEIGHTS = {
 
 
 def compute_experience_depth_score(
-    matched_skills: list[dict],
+    matched_skills: list[Any],
     required_skills: list[str],
 ) -> float:
     """Score based on proficiency levels of matched skills."""
@@ -261,7 +261,8 @@ def compute_experience_depth_score(
                        "expert": 1.0, "inferred": 0.30, "verified_github": 0.85}
     total = 0.0
     for ms in matched_skills:
-        prof = ms.get("proficiency", "beginner")
+        # handle both dict and MatchedSkill object (which might be typeddict or class)
+        prof = ms.get("proficiency", "beginner") if isinstance(ms, dict) else getattr(ms, "proficiency", "beginner")
         total += proficiency_map.get(prof, 0.3)
 
     return min(total / max(len(required_skills), 1), 1.0)
@@ -290,11 +291,11 @@ def compute_shap_contributions(
     exp_depth: float,
     nice_coverage: float,
     has_growth: bool,
-    matched_skills: list[dict],
+    matched_skills: list[Any],
     skill_gaps: list[str],
 ) -> dict:
     """SHAP-style feature attribution. Shows what drove the score."""
-    contributions = {
+    contributions: dict[str, Any] = {
         "required_skill_coverage": round(WEIGHTS["required_skill_coverage"] * required_coverage, 3),
         "semantic_similarity": round(WEIGHTS["semantic_similarity"] * semantic_sim, 3),
         "experience_depth": round(WEIGHTS["experience_depth"] * exp_depth, 3),
@@ -303,9 +304,9 @@ def compute_shap_contributions(
     }
 
     # Top contributing matched skills
-    top_skills = sorted(matched_skills, key=lambda x: x.get("match_score", 0), reverse=True)[:5]
+    top_skills = sorted(matched_skills, key=lambda x: x.get("match_score", 0) if isinstance(x, dict) else getattr(x, "similarity", 0), reverse=True)[:5]
     contributions["top_skill_matches"] = [
-        {"skill": s.get("canonical", ""), "contribution": round(s.get("match_score", 0) * 0.1, 3)}
+        {"skill": s.get("canonical", "") if isinstance(s, dict) else getattr(s, "candidate_skill", ""), "contribution": round((s.get("match_score", 0) if isinstance(s, dict) else getattr(s, "similarity", 0)) * 0.1, 3)}
         for s in top_skills
     ]
 
@@ -348,14 +349,14 @@ def evaluate_hitl(
 
 async def run_cot_match(
     jd_parsed: dict,
-    candidate_skills: list[dict],
+    candidate_skills: list[Any],
     experience: list[dict],
 ) -> str:
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
 
     skills_text = "\n".join(
-        f"- {s['canonical']} ({s['proficiency']}, {s['years']}yr)"
+        f"- {s.get('canonical', '') if isinstance(s, dict) else getattr(s, 'canonical', '')} ({s.get('proficiency', '') if isinstance(s, dict) else getattr(s, 'proficiency', '')}, {s.get('years', '') if isinstance(s, dict) else getattr(s, 'years', '')}yr)"
         for s in candidate_skills[:20]
     )
     exp_text = "\n".join(
@@ -382,13 +383,13 @@ async def run_cot_match(
 
 
 async def generate_interview_questions(
-    matched: list[dict],
+    matched: list[Any],
     gaps: list[str],
     recommendation: str,
 ) -> dict:
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
-    matched_names = [m.get("canonical", "") for m in matched[:5]]
+    matched_names = [m.get("canonical", "") if isinstance(m, dict) else getattr(m, "candidate_skill", "") for m in matched[:5]]
     try:
         response = await model.generate_content_async(
             INTERVIEW_PROMPT.format(
@@ -603,7 +604,7 @@ async def match_agent(
 
     trace: AgentTrace = {
         "agent": "match_agent",
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
         "duration_ms": int((time.time() - started) * 1000),
         "status": status,
         "quality_score": state.get("match_score", 0.0),

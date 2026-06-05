@@ -11,7 +11,7 @@ langchain-google-genai==1.0.6
 
 # ─── Embeddings ───────────────────────────────────────────────────
 sentence-transformers==3.0.1
-torch==2.3.1
+torch>=2.9.0
 numpy==1.26.4
 scikit-learn==1.5.0
 
@@ -20,7 +20,7 @@ chromadb==0.5.3
 
 # ─── Document Parsing ─────────────────────────────────────────────
 pdfplumber==0.11.1
-PyMuPDF==1.24.5
+PyMuPDF>=1.24.5
 python-docx==1.1.2
 pytesseract==0.3.13
 Pillow==10.4.0

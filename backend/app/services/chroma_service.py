@@ -13,7 +13,9 @@ COLLECTIONS = {
 }
 
 
-def get_chroma_client() -> chromadb.CloudClient:
+from chromadb.api import ClientAPI
+
+def get_chroma_client() -> "ClientAPI":
     global _client
     if _client is None:
         _client = chromadb.CloudClient(
@@ -55,11 +57,12 @@ async def embed_candidate_profile(candidate_id: str, skills: list[dict], summary
         skill_text = " ".join(s.get("canonical", "") for s in skills)
         combined_text = f"{summary} {skill_text}".strip()[:2000]
 
-        embedding = model.encode(combined_text).tolist()
+        embedding_val = model.encode(combined_text)
+        embedding = getattr(embedding_val, "tolist", lambda: list(embedding_val))()  # type: ignore
 
         collection.upsert(
             ids=[candidate_id],
-            embeddings=[embedding],
+            embeddings=[embedding],  # type: ignore
             metadatas=[{
                 "skills": ",".join(s.get("canonical", "") for s in skills[:20]),
                 "skill_count": len(skills),
@@ -77,11 +80,12 @@ async def embed_skill_in_taxonomy(skill_id: str, skill_name: str, category: str,
         collection = client.get_collection("skill_taxonomy")
 
         text = f"{skill_name} {category} {parent}".strip()
-        embedding = model.encode(text).tolist()
+        embedding_val = model.encode(text)
+        embedding = getattr(embedding_val, "tolist", lambda: list(embedding_val))()  # type: ignore
 
         collection.upsert(
             ids=[skill_id],
-            embeddings=[embedding],
+            embeddings=[embedding],  # type: ignore
             metadatas={
                 "canonical_name": skill_name,
                 "category": category,

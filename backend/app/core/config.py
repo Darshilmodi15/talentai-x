@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     CHROMA_DATABASE: str = "talentai_db"
 
     # Gemini
-    GEMINI_API_KEY: str = Field(..., env="GEMINI_API_KEY")
+    GEMINI_API_KEY: str = Field(default="")
     GEMINI_MODEL: str = "gemini-2.0-flash"
 
     # Embedding

@@ -9,8 +9,8 @@ Agent 1: Resume Parser
 import asyncio
 import json
 import time
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Optional, Any
 import io
 
 from app.core.pipeline_state import PipelineState, AgentTrace
@@ -185,7 +185,7 @@ def extract_table_heavy(file_bytes: bytes) -> str:
             table_text = ""
             for table in tables:
                 for row in table:
-                    table_text += " | ".join(str(cell or "") for cell in row) + "\n"
+                    table_text += " | ".join((cell or "") for cell in row) + "\n"
             body_text = page.extract_text() or ""
             texts.append(table_text + "\n" + body_text)
     return "\n\n".join(texts)
@@ -202,7 +202,7 @@ def extract_with_ocr(file_bytes: bytes) -> str:
         for page in doc:
             mat = fitz.Matrix(2, 2)  # 2x zoom for better OCR
             pix = page.get_pixmap(matrix=mat)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
             text = pytesseract.image_to_string(img)
             texts.append(text)
         return "\n\n".join(texts)
@@ -414,7 +414,7 @@ async def parse_agent(state: PipelineState) -> PipelineState:
     # Record trace
     trace: AgentTrace = {
         "agent": "parse_agent",
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
         "duration_ms": int((time.time() - started) * 1000),
         "status": status,
         "quality_score": state.get("parse_confidence", 0.0),
