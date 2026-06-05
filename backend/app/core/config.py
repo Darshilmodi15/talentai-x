@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://talentai:talentai_secret@localhost:5432/talentai_db"
-    DATABASE_URL_SYNC: str = "postgresql://talentai:talentai_secret@localhost:5432/talentai_db"
+    DATABASE_URL: str = "postgresql+asyncpg://talentai:talentai_secret@localhost:5433/talentai_db"
+    DATABASE_URL_SYNC: str = "postgresql://talentai:talentai_secret@localhost:5433/talentai_db"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
