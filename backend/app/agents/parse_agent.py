@@ -21,7 +21,7 @@ import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
-
+logger.warning("PARSE_AGENT_VERSION_2026_06_05")
 # ──────────────────────────────────────────────────────────────────
 # PROMPTS — tightly scoped per extraction task
 # ──────────────────────────────────────────────────────────────────
@@ -279,45 +279,72 @@ def detect_ai_content(text: str) -> float:
 # LLM Calls — run in parallel
 # ──────────────────────────────────────────────────────────────────
 
+class GeminiCallError(Exception):
+    def __init__(self, message, raw_response, cleaned_response, traceback_str, exception_type):
+        super().__init__(message)
+        self.raw_response = raw_response
+        self.cleaned_response = cleaned_response
+        self.traceback_str = traceback_str
+        self.exception_type = exception_type
+
 async def call_gemini(prompt: str, max_tokens: int = 1500) -> dict:
     """Single async Gemini call. Returns parsed JSON or raises exception to track failure."""
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(settings.GEMINI_MODEL)
-    
-    response = await model.generate_content_async(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
-            max_output_tokens=max_tokens,
-            temperature=0.1,
-        ),
-    )
-    content = response.text.strip()
-    logger.info(f"Raw Gemini response: {content}")
-
-    # Remove markdown wrappers
-    cleaned_response = content
-    import re
-    match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
-    if match:
-        cleaned_response = match.group(1).strip()
-    else:
-        # Fallback if unclosed or just backticks
-        cleaned_response = content.strip("`").strip()
-        if cleaned_response.startswith("json"):
-            cleaned_response = cleaned_response[4:].strip()
-
+    import traceback
+    content = ""
+    cleaned_response = ""
     try:
-        parsed = json.loads(cleaned_response)
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=0.1,
+            ),
+        )
+        content = response.text.strip()
+        logger.info(f"Raw Gemini response: {content}")
+
+        logger.error("=== GEMINI RAW START ===")
+        logger.error(content)
+        logger.error("=== GEMINI RAW END ===")
+
+        # Remove markdown wrappers
+        cleaned_response = content
+        import re
+        match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
+        if match:
+            cleaned_response = match.group(1).strip()
+        else:
+            # Fallback if unclosed or just backticks
+            cleaned_response = content.strip("`").strip()
+            if cleaned_response.startswith("json"):
+                cleaned_response = cleaned_response[4:].strip()
+
+        logger.error("=== CLEANED RESPONSE START ===")
+        logger.error(cleaned_response)
+        logger.error("=== CLEANED RESPONSE END ===")
+
+        try:
+            parsed = json.loads(cleaned_response)
+        except Exception as e:
+            logger.exception("JSON parse failed")
+            raise ValueError(f"JSON Parse Failed.\nException:\n{e}")
+
+        if not isinstance(parsed, dict):
+            raise ValueError("Gemini did not return a JSON object")
+
+        return parsed
     except Exception as e:
-        logger.exception("JSON parse failed")
-        import traceback
-        tb = traceback.format_exc()
-        raise ValueError(f"JSON Parse Failed.\nRaw Response:\n{content}\nException:\n{e}\nTraceback:\n{tb}")
-
-    if not isinstance(parsed, dict):
-        raise ValueError("Gemini did not return a JSON object")
-
-    return parsed
+        logger.exception("CALL_GEMINI_FAILED")
+        raise GeminiCallError(
+            f"CALL_GEMINI_FAILED\nTYPE={type(e).__name__}\nERROR={str(e)}\nTRACEBACK={traceback.format_exc()}",
+            raw_response=content,
+            cleaned_response=cleaned_response,
+            traceback_str=traceback.format_exc(),
+            exception_type=type(e).__name__
+        )
 
 
 async def extract_all_parallel(raw_text: str) -> tuple[dict, dict, dict, dict]:
@@ -418,6 +445,7 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         status = "success"
 
     except Exception as e:
+        import traceback
         error_msg = str(e)
         state["errors"] = state.get("errors", []) + [f"parse_agent: {error_msg}"]
         state["parsed"] = {}
@@ -427,6 +455,11 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         state["ai_content_probability"] = 0.0
         state["experience_months_total"] = 0
         status = "failed"
+        
+        traceback_str = getattr(e, "traceback_str", traceback.format_exc())
+        exception_type = getattr(e, "exception_type", type(e).__name__)
+        raw_gemini_response = getattr(e, "raw_response", None)
+        cleaned_gemini_response = getattr(e, "cleaned_response", None)
 
     # Record trace
     trace: AgentTrace = {
@@ -439,6 +472,12 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         "retry_count": retry_count,
         "error": error_msg,
     }
+
+    if status == "failed":
+        trace["exception_type"] = exception_type
+        trace["traceback"] = traceback_str
+        trace["raw_gemini_response"] = raw_gemini_response
+        trace["cleaned_gemini_response"] = cleaned_gemini_response
 
     state["traces"] = state.get("traces", []) + [trace]
     return state

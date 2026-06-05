@@ -7,7 +7,7 @@ from typing import TypedDict, Optional
 import uuid
 
 
-class AgentTrace(TypedDict):
+class AgentTrace(TypedDict, total=False):
     agent: str
     started_at: str
     duration_ms: int
@@ -16,6 +16,10 @@ class AgentTrace(TypedDict):
     fields_extracted: int
     retry_count: int
     error: Optional[str]
+    exception_type: Optional[str]
+    traceback: Optional[str]
+    raw_gemini_response: Optional[str]
+    cleaned_gemini_response: Optional[str]
 
 
 class SkillEntry(TypedDict):
