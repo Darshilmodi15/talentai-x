@@ -4,7 +4,7 @@ from fastapi import Security, HTTPException, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.config import settings
 
@@ -49,7 +49,7 @@ async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
             )
 
         # Update last_used
-        key_record.last_used = datetime.utcnow()
+        key_record.last_used = datetime.now(timezone.utc)
         await db.commit()
 
     return api_key

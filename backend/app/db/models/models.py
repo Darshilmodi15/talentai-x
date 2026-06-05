@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     String, Text, Integer, Float, Boolean, DateTime,
     ForeignKey, JSON, Enum as SAEnum
@@ -8,6 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.database import Base
 import enum
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
 
 
 class ProcessingStatus(str, enum.Enum):
@@ -34,7 +38,7 @@ class APIKey(Base):
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     last_used: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -51,7 +55,7 @@ class ParseJob(Base):
     file_name: Mapped[str] = mapped_column(String(255))
     file_type: Mapped[str] = mapped_column(String(20))
     file_path: Mapped[str] = mapped_column(String(500))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     traces: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -95,7 +99,7 @@ class Candidate(Base):
     # Metadata
     resume_language: Mapped[str] = mapped_column(String(10), default="en")
     experience_months_total: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     # Relationships
     parse_job: Mapped["ParseJob"] = relationship("ParseJob", back_populates="candidate")
@@ -148,7 +152,7 @@ class Job(Base):
     nice_to_have_skills: Mapped[list] = mapped_column(JSON, default=list)
     experience_years_min: Mapped[int] = mapped_column(Integer, default=0)
     parsed_requirements: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     match_results: Mapped[list["MatchResult"]] = relationship("MatchResult", back_populates="job")
 
@@ -188,7 +192,7 @@ class MatchResult(Base):
     human_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     candidate: Mapped["Candidate"] = relationship("Candidate", back_populates="match_results")
     job: Mapped["Job"] = relationship("Job", back_populates="match_results")
@@ -208,7 +212,7 @@ class SkillTaxonomy(Base):
     synonyms: Mapped[list] = mapped_column(JSON, default=list)
     source: Mapped[str] = mapped_column(String(50), default="manual")  # manual, auto_discovered
     chroma_embedded: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class EmergingSkill(Base):
@@ -220,7 +224,7 @@ class EmergingSkill(Base):
     contexts: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, approved, rejected
     proposed_canonical: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -235,7 +239,7 @@ class HITLReviewItem(Base):
     priority: Mapped[str] = mapped_column(String(20), default="normal")
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     resolved: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -249,4 +253,4 @@ class Webhook(Base):
     secret: Mapped[str] = mapped_column(String(100))
     events: Mapped[list] = mapped_column(JSON, default=list)  # ["job.completed", "match.done"]
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
