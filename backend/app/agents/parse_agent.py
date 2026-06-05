@@ -12,11 +12,14 @@ import time
 from datetime import datetime, timezone
 from typing import Optional, Any
 import io
+import logging
 
 from app.core.pipeline_state import PipelineState, AgentTrace
 from app.core.config import settings
 
 import google.generativeai as genai
+
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -277,28 +280,44 @@ def detect_ai_content(text: str) -> float:
 # ──────────────────────────────────────────────────────────────────
 
 async def call_gemini(prompt: str, max_tokens: int = 1500) -> dict:
-    """Single async Gemini call. Returns parsed JSON or empty dict."""
+    """Single async Gemini call. Returns parsed JSON or raises exception to track failure."""
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
+    
+    response = await model.generate_content_async(
+        prompt,
+        generation_config=genai.types.GenerationConfig(
+            max_output_tokens=max_tokens,
+            temperature=0.1,
+        ),
+    )
+    content = response.text.strip()
+    logger.info(f"Raw Gemini response: {content}")
+
+    # Remove markdown wrappers
+    cleaned_response = content
+    import re
+    match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
+    if match:
+        cleaned_response = match.group(1).strip()
+    else:
+        # Fallback if unclosed or just backticks
+        cleaned_response = content.strip("`").strip()
+        if cleaned_response.startswith("json"):
+            cleaned_response = cleaned_response[4:].strip()
+
     try:
-        response = await model.generate_content_async(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                max_output_tokens=max_tokens,
-                temperature=0.1,
-            ),
-        )
-        content = response.text.strip()
-        # Strip markdown code blocks if present
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-        return json.loads(content)
-    except json.JSONDecodeError:
-        return {}
-    except Exception:
-        return {}
+        parsed = json.loads(cleaned_response)
+    except Exception as e:
+        logger.exception("JSON parse failed")
+        import traceback
+        tb = traceback.format_exc()
+        raise ValueError(f"JSON Parse Failed.\nRaw Response:\n{content}\nException:\n{e}\nTraceback:\n{tb}")
+
+    if not isinstance(parsed, dict):
+        raise ValueError("Gemini did not return a JSON object")
+
+    return parsed
 
 
 async def extract_all_parallel(raw_text: str) -> tuple[dict, dict, dict, dict]:
