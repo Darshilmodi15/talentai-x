@@ -23,9 +23,10 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    # ChromaDB
-    CHROMA_HOST: str = "localhost"
-    CHROMA_PORT: int = 8001
+    # ChromaDB Cloud
+    CHROMA_API_KEY: str = ""
+    CHROMA_TENANT: str = "266a2f4f-9628-4504-95f1-7b3a6c144859"
+    CHROMA_DATABASE: str = "talentai_db"
 
     # Anthropic
     ANTHROPIC_API_KEY: str = Field(..., env="ANTHROPIC_API_KEY")

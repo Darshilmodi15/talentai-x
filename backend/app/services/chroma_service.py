@@ -13,12 +13,13 @@ COLLECTIONS = {
 }
 
 
-def get_chroma_client() -> chromadb.HttpClient:
+def get_chroma_client() -> chromadb.CloudClient:
     global _client
     if _client is None:
-        _client = chromadb.HttpClient(
-            host=settings.CHROMA_HOST,
-            port=settings.CHROMA_PORT,
+        _client = chromadb.CloudClient(
+            api_key=settings.CHROMA_API_KEY,
+            tenant=settings.CHROMA_TENANT,
+            database=settings.CHROMA_DATABASE,
         )
     return _client
 
