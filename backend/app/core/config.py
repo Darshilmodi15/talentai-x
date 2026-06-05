@@ -28,9 +28,9 @@ class Settings(BaseSettings):
     CHROMA_TENANT: str = "266a2f4f-9628-4504-95f1-7b3a6c144859"
     CHROMA_DATABASE: str = "talentai_db"
 
-    # Anthropic
-    ANTHROPIC_API_KEY: str = Field(..., env="ANTHROPIC_API_KEY")
-    ANTHROPIC_MODEL: str = "claude-sonnet-4-20250514"
+    # Gemini
+    GEMINI_API_KEY: str = Field(..., env="GEMINI_API_KEY")
+    GEMINI_MODEL: str = "gemini-2.0-flash"
 
     # Embedding
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"

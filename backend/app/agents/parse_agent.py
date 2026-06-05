@@ -22,7 +22,7 @@ try:
     import fitz  # PyMuPDF fallback
     import docx
     from langdetect import detect as detect_language
-    import anthropic
+    import google.generativeai as genai
     import numpy as np
 except ImportError:
     pass  # handled at runtime with clear error messages
@@ -279,16 +279,19 @@ def detect_ai_content(text: str) -> float:
 # LLM Calls — run in parallel
 # ──────────────────────────────────────────────────────────────────
 
-async def call_claude(prompt: str, max_tokens: int = 1500) -> dict:
-    """Single async Claude call. Returns parsed JSON or empty dict."""
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+async def call_gemini(prompt: str, max_tokens: int = 1500) -> dict:
+    """Single async Gemini call. Returns parsed JSON or empty dict."""
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(settings.GEMINI_MODEL)
     try:
-        response = await client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
+        response = await model.generate_content_async(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=0.1,
+            ),
         )
-        content = response.content[0].text.strip()
+        content = response.text.strip()
         # Strip markdown code blocks if present
         if content.startswith("```"):
             content = content.split("```")[1]
@@ -307,10 +310,10 @@ async def extract_all_parallel(raw_text: str) -> tuple[dict, dict, dict, dict]:
     text_chunk = raw_text[:6000]
 
     basic, experience, education, skills = await asyncio.gather(
-        call_claude(PROMPT_BASIC_INFO.format(text=text_chunk), max_tokens=800),
-        call_claude(PROMPT_EXPERIENCE.format(text=text_chunk), max_tokens=1500),
-        call_claude(PROMPT_EDUCATION.format(text=text_chunk), max_tokens=600),
-        call_claude(PROMPT_SKILLS_CERTS.format(text=text_chunk), max_tokens=1000),
+        call_gemini(PROMPT_BASIC_INFO.format(text=text_chunk), max_tokens=800),
+        call_gemini(PROMPT_EXPERIENCE.format(text=text_chunk), max_tokens=1500),
+        call_gemini(PROMPT_EDUCATION.format(text=text_chunk), max_tokens=600),
+        call_gemini(PROMPT_SKILLS_CERTS.format(text=text_chunk), max_tokens=1000),
     )
     return basic, experience, education, skills
 

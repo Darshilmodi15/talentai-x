@@ -49,7 +49,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
       SECRET_KEY: ${SECRET_KEY:-supersecretkey123}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     depends_on:
@@ -72,7 +72,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy

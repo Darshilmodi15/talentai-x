@@ -32,17 +32,17 @@ echo -e "${YELLOW}[2/7] Setting up environment...${NC}"
 
 if [ ! -f .env ]; then
     cp .env.example .env
-    echo -e "${YELLOW}⚠ .env created from template. Add your ANTHROPIC_API_KEY!${NC}"
+    echo -e "${YELLOW}⚠ .env created from template. Add your GEMINI_API_KEY!${NC}"
     echo ""
     echo "  Edit .env and set:"
-    echo "  ANTHROPIC_API_KEY=your_key_here"
+    echo "  GEMINI_API_KEY=your_key_here"
     echo ""
-    read -p "Press Enter after setting ANTHROPIC_API_KEY in .env..."
+    read -p "Press Enter after setting GEMINI_API_KEY in .env..."
 fi
 
 # Validate API key is set
-if grep -q "your_anthropic_api_key_here" .env 2>/dev/null; then
-    echo -e "${RED}ERROR: ANTHROPIC_API_KEY not set in .env${NC}"
+if grep -q "your_gemini_api_key_here" .env 2>/dev/null; then
+    echo -e "${RED}ERROR: GEMINI_API_KEY not set in .env${NC}"
     exit 1
 fi
 echo -e "${GREEN}✓ Environment configured${NC}"

@@ -18,7 +18,7 @@ from app.core.pipeline_state import PipelineState, AgentTrace, MatchedSkill
 from app.core.config import settings
 
 try:
-    import anthropic
+    import google.generativeai as genai
     from sentence_transformers import SentenceTransformer
     from sklearn.metrics.pairwise import cosine_similarity
     import numpy as np
@@ -155,14 +155,17 @@ def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 # ──────────────────────────────────────────────────────────────────
 
 async def parse_job_description(jd: str) -> dict:
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(settings.GEMINI_MODEL)
     try:
-        response = await client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=1000,
-            messages=[{"role": "user", "content": JD_PARSE_PROMPT.format(jd=jd[:3000])}],
+        response = await model.generate_content_async(
+            JD_PARSE_PROMPT.format(jd=jd[:3000]),
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=1000,
+                temperature=0.1,
+            ),
         )
-        content = response.content[0].text.strip()
+        content = response.text.strip()
         if content.startswith("```"):
             content = content.split("```")[1]
             if content.startswith("json"):
@@ -348,7 +351,8 @@ async def run_cot_match(
     candidate_skills: list[dict],
     experience: list[dict],
 ) -> str:
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(settings.GEMINI_MODEL)
 
     skills_text = "\n".join(
         f"- {s['canonical']} ({s['proficiency']}, {s['years']}yr)"
@@ -361,19 +365,18 @@ async def run_cot_match(
     )
 
     try:
-        response = await client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=2000,
-            messages=[{
-                "role": "user",
-                "content": COT_MATCH_PROMPT.format(
-                    job_requirements=json.dumps(jd_parsed, indent=2)[:1500],
-                    candidate_profile=skills_text,
-                    experience_summary=exp_text,
-                )
-            }],
+        response = await model.generate_content_async(
+            COT_MATCH_PROMPT.format(
+                job_requirements=json.dumps(jd_parsed, indent=2)[:1500],
+                candidate_profile=skills_text,
+                experience_summary=exp_text,
+            ),
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=2000,
+                temperature=0.2,
+            ),
         )
-        return response.content[0].text
+        return response.text
     except Exception as e:
         return f"CoT analysis unavailable: {e}"
 
@@ -383,22 +386,22 @@ async def generate_interview_questions(
     gaps: list[str],
     recommendation: str,
 ) -> dict:
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(settings.GEMINI_MODEL)
     matched_names = [m.get("canonical", "") for m in matched[:5]]
     try:
-        response = await client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=1500,
-            messages=[{
-                "role": "user",
-                "content": INTERVIEW_PROMPT.format(
-                    matched=matched_names,
-                    gaps=gaps[:5],
-                    recommendation=recommendation,
-                )
-            }],
+        response = await model.generate_content_async(
+            INTERVIEW_PROMPT.format(
+                matched=matched_names,
+                gaps=gaps[:5],
+                recommendation=recommendation,
+            ),
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=1500,
+                temperature=0.3,
+            ),
         )
-        content = response.content[0].text.strip()
+        content = response.text.strip()
         if content.startswith("```"):
             content = content.split("```")[1]
             if content.startswith("json"):
@@ -411,17 +414,17 @@ async def generate_interview_questions(
 async def generate_upskilling(gaps: list[str]) -> dict:
     if not gaps:
         return {}
-    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(settings.GEMINI_MODEL)
     try:
-        response = await client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=800,
-            messages=[{
-                "role": "user",
-                "content": UPSKILLING_PROMPT.format(gaps=gaps[:8])
-            }],
+        response = await model.generate_content_async(
+            UPSKILLING_PROMPT.format(gaps=gaps[:8]),
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=800,
+                temperature=0.2,
+            ),
         )
-        content = response.content[0].text.strip()
+        content = response.text.strip()
         if content.startswith("```"):
             content = content.split("```")[1]
             if content.startswith("json"):

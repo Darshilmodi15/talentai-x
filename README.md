@@ -61,14 +61,14 @@ Storage:
 - Python 3.12+
 - Node.js 20+
 - Docker + Docker Compose
-- Anthropic API key
+- Gemini API key
 
 ### 1. Clone and configure
 ```bash
 git clone <repo>
 cd talentai-x
 cp .env.example .env
-# Edit .env — set ANTHROPIC_API_KEY
+# Edit .env — set GEMINI_API_KEY
 ```
 
 ### 2. One-command setup
@@ -292,4 +292,4 @@ talentai-x/
 
 ---
 
-*Built with Claude (Anthropic) · LangGraph · FastAPI · React · ChromaDB*
+*Built with Gemini (Google) · LangGraph · FastAPI · React · ChromaDB*
