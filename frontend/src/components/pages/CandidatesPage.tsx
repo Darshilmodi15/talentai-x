@@ -1,18 +1,32 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Search, User, Zap, ChevronRight, Star } from 'lucide-react'
 import { listCandidates } from '../../api/client'
+
+interface Candidate {
+  id: string;
+  name: string;
+  email: string;
+  skills_count: number;
+  experience_months: number;
+  parse_confidence: number;
+}
+
+interface CandidatesResponse {
+  candidates: Candidate[];
+  total: number;
+}
 
 export default function CandidatesPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<CandidatesResponse>({
     queryKey: ['candidates', page, search],
     queryFn: () => listCandidates(page, search),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 
   const proficiencyColor = (count: number) => {
@@ -137,10 +151,10 @@ export default function CandidatesPage() {
       </div>
 
       {/* Pagination */}
-      {data?.total > 20 && (
+      {(data?.total ?? 0) > 20 && (
         <div className="flex items-center justify-between mt-4">
           <p className="text-sm text-gray-500">
-            Page {page} of {Math.ceil(data.total / 20)}
+            Page {page} of {Math.ceil((data?.total ?? 0) / 20)}
           </p>
           <div className="flex gap-2">
             <button
@@ -152,7 +166,7 @@ export default function CandidatesPage() {
             </button>
             <button
               onClick={() => setPage((p) => p + 1)}
-              disabled={page >= Math.ceil(data.total / 20)}
+              disabled={page >= Math.ceil((data?.total ?? 0) / 20)}
               className="px-3 py-1 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
             >
               Next
