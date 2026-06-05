@@ -326,10 +326,10 @@ async def extract_all_parallel(raw_text: str) -> tuple[dict, dict, dict, dict]:
     text_chunk = raw_text[:6000]
 
     basic, experience, education, skills = await asyncio.gather(
-        call_gemini(PROMPT_BASIC_INFO.format(text=text_chunk), max_tokens=800),
-        call_gemini(PROMPT_EXPERIENCE.format(text=text_chunk), max_tokens=1500),
-        call_gemini(PROMPT_EDUCATION.format(text=text_chunk), max_tokens=600),
-        call_gemini(PROMPT_SKILLS_CERTS.format(text=text_chunk), max_tokens=1000),
+        call_gemini(PROMPT_BASIC_INFO.replace("{text}", text_chunk), max_tokens=800),
+        call_gemini(PROMPT_EXPERIENCE.replace("{text}", text_chunk), max_tokens=1500),
+        call_gemini(PROMPT_EDUCATION.replace("{text}", text_chunk), max_tokens=600),
+        call_gemini(PROMPT_SKILLS_CERTS.replace("{text}", text_chunk), max_tokens=1000),
     )
     return basic, experience, education, skills
 
