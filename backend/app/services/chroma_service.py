@@ -1,9 +1,10 @@
 """ChromaDB Service - vector store initialization and skill embedding"""
-import chromadb
+import typing
 from app.core.config import settings
 
+import google.generativeai as genai
+
 _client = None
-_model = None
 
 COLLECTIONS = {
     "skill_taxonomy": "TalentAI skill taxonomy embeddings",
@@ -13,11 +14,10 @@ COLLECTIONS = {
 }
 
 
-from chromadb.api import ClientAPI
-
-def get_chroma_client() -> "ClientAPI":
+def get_chroma_client() -> "typing.Any":
     global _client
     if _client is None:
+        import chromadb
         _client = chromadb.CloudClient(
             api_key=settings.CHROMA_API_KEY,
             tenant=settings.CHROMA_TENANT,
@@ -26,12 +26,7 @@ def get_chroma_client() -> "ClientAPI":
     return _client
 
 
-def get_embedding_model():
-    global _model
-    if _model is None:
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(settings.EMBEDDING_MODEL)
-    return _model
+
 
 
 async def init_chroma():
@@ -51,14 +46,18 @@ async def embed_candidate_profile(candidate_id: str, skills: list[dict], summary
     """Embed candidate's skill profile into ChromaDB for fast semantic search."""
     try:
         client = get_chroma_client()
-        model = get_embedding_model()
         collection = client.get_collection("candidate_profiles")
 
         skill_text = " ".join(s.get("canonical", "") for s in skills)
         combined_text = f"{summary} {skill_text}".strip()[:2000]
 
-        embedding_val = model.encode(combined_text)
-        embedding = getattr(embedding_val, "tolist", lambda: list(embedding_val))()  # type: ignore
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        res = genai.embed_content(
+            model=settings.EMBEDDING_MODEL,
+            content=combined_text,
+            task_type="retrieval_document",
+        )
+        embedding = res['embedding']
 
         collection.upsert(
             ids=[candidate_id],
@@ -76,12 +75,17 @@ async def embed_skill_in_taxonomy(skill_id: str, skill_name: str, category: str,
     """Add a skill to the taxonomy ChromaDB collection."""
     try:
         client = get_chroma_client()
-        model = get_embedding_model()
         collection = client.get_collection("skill_taxonomy")
 
         text = f"{skill_name} {category} {parent}".strip()
-        embedding_val = model.encode(text)
-        embedding = getattr(embedding_val, "tolist", lambda: list(embedding_val))()  # type: ignore
+        
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        res = genai.embed_content(
+            model=settings.EMBEDDING_MODEL,
+            content=text,
+            task_type="retrieval_document",
+        )
+        embedding = res['embedding']
 
         collection.upsert(
             ids=[skill_id],

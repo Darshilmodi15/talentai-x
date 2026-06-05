@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.0-flash"
 
     # Embedding
-    EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL: str = "models/text-embedding-004"
 
     # Matching thresholds
     MATCH_THRESHOLD_AUTO: float = 0.85

@@ -14,12 +14,7 @@ from typing import Optional, Any
 from app.core.pipeline_state import PipelineState, AgentTrace, SkillEntry
 from app.core.config import settings
 
-try:
-    import jellyfish
-    import chromadb
-    from sentence_transformers import SentenceTransformer
-except ImportError:
-    pass
+# Imports like chromadb, sentence_transformers, and jellyfish are loaded lazily to save memory.
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -229,11 +224,15 @@ def fuzzy_match_synonym(skill: str) -> Optional[str]:
     # Fuzzy match against all synonym keys
     best_score = 0.0
     best_match = None
-    for key in SYNONYMS:
-        score = jellyfish.jaro_winkler_similarity(skill_lower, key)
-        if score > best_score:
-            best_score = score
-            best_match = key
+    try:
+        import jellyfish
+        for key in SYNONYMS:
+            score = jellyfish.jaro_winkler_similarity(skill_lower, key)
+            if score > best_score:
+                best_score = score
+                best_match = key
+    except ImportError:
+        pass
 
     if best_score >= 0.88 and best_match:
         return SYNONYMS[best_match]
@@ -246,12 +245,12 @@ def fuzzy_match_synonym(skill: str) -> Optional[str]:
 # ──────────────────────────────────────────────────────────────────
 
 _chroma_client = None
-_embedding_model = None
 
 
 def get_chroma_client():
     global _chroma_client
     if _chroma_client is None:
+        import chromadb
         _chroma_client = chromadb.CloudClient(
             api_key=settings.CHROMA_API_KEY,
             tenant=settings.CHROMA_TENANT,
@@ -260,11 +259,7 @@ def get_chroma_client():
     return _chroma_client
 
 
-def get_embedding_model():
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL)
-    return _embedding_model
+
 
 
 def semantic_skill_lookup(skill: str) -> Optional[str]:
@@ -274,11 +269,15 @@ def semantic_skill_lookup(skill: str) -> Optional[str]:
     """
     try:
         client = get_chroma_client()
-        model = get_embedding_model()
         collection = client.get_collection("skill_taxonomy")
-
-        embedding_val = model.encode(skill)
-        embedding = getattr(embedding_val, "tolist", lambda: list(embedding_val))()  # type: ignore
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        res = genai.embed_content(
+            model=settings.EMBEDDING_MODEL,
+            content=skill,
+            task_type="retrieval_query",
+        )
+        embedding = res['embedding']
         results = collection.query(
             query_embeddings=[embedding],  # type: ignore
             n_results=1,

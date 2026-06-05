@@ -17,13 +17,7 @@ from typing import Optional, Any
 from app.core.pipeline_state import PipelineState, AgentTrace, MatchedSkill
 from app.core.config import settings
 
-try:
-    import google.generativeai as genai
-    from sentence_transformers import SentenceTransformer
-    from sklearn.metrics.pairwise import cosine_similarity
-    import numpy as np
-except ImportError:
-    pass
+
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -135,19 +129,24 @@ Schema:
 _model = None
 
 
-def get_model():
-    global _model
-    if _model is None:
-        _model = SentenceTransformer(settings.EMBEDDING_MODEL)
-    return _model
+def embed_text(text: str) -> list[float]:
+    import google.generativeai as genai
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    res = genai.embed_content(
+        model=settings.EMBEDDING_MODEL,
+        content=text[:2000],
+        task_type="semantic_similarity"
+    )
+    return res['embedding']
 
 
-def embed_text(text: str) -> np.ndarray:
-    return np.asarray(get_model().encode([text[:2000]])[0])
-
-
-def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-    return float(cosine_similarity([a], [b])[0][0])  # type: ignore
+def cosine_sim(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    mag_a = sum(x * x for x in a) ** 0.5
+    mag_b = sum(x * x for x in b) ** 0.5
+    if mag_a * mag_b == 0:
+        return 0.0
+    return dot / (mag_a * mag_b)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -155,6 +154,7 @@ def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 # ──────────────────────────────────────────────────────────────────
 
 async def parse_job_description(jd: str) -> dict:
+    import google.generativeai as genai
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
     try:
@@ -352,6 +352,7 @@ async def run_cot_match(
     candidate_skills: list[Any],
     experience: list[dict],
 ) -> str:
+    import google.generativeai as genai
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
 
@@ -387,6 +388,7 @@ async def generate_interview_questions(
     gaps: list[str],
     recommendation: str,
 ) -> dict:
+    import google.generativeai as genai
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
     matched_names = [m.get("canonical", "") if isinstance(m, dict) else getattr(m, "candidate_skill", "") for m in matched[:5]]
@@ -415,6 +417,7 @@ async def generate_interview_questions(
 async def generate_upskilling(gaps: list[str]) -> dict:
     if not gaps:
         return {}
+    import google.generativeai as genai
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
     try:

@@ -16,16 +16,7 @@ import io
 from app.core.pipeline_state import PipelineState, AgentTrace
 from app.core.config import settings
 
-# These imports are conditional — they work once installed
-try:
-    import pdfplumber
-    import fitz  # PyMuPDF fallback
-    import docx
-    from langdetect import detect as detect_language
-    import google.generativeai as genai
-    import numpy as np
-except ImportError:
-    pass  # handled at runtime with clear error messages
+import google.generativeai as genai
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -123,6 +114,7 @@ Resume text:
 def detect_pdf_layout(file_bytes: bytes) -> str:
     """Classify PDF layout to route to correct extractor."""
     try:
+        import pdfplumber
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             if not pdf.pages:
                 return "image_based"
@@ -158,6 +150,7 @@ def detect_pdf_layout(file_bytes: bytes) -> str:
 # ──────────────────────────────────────────────────────────────────
 
 def extract_single_column(file_bytes: bytes) -> str:
+    import pdfplumber
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         return "\n".join(
             page.extract_text() or "" for page in pdf.pages
@@ -167,6 +160,7 @@ def extract_single_column(file_bytes: bytes) -> str:
 def extract_two_column(file_bytes: bytes) -> str:
     """Split page into left/right streams and extract each."""
     texts = []
+    import pdfplumber
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             mid = page.width / 2
@@ -179,6 +173,7 @@ def extract_two_column(file_bytes: bytes) -> str:
 def extract_table_heavy(file_bytes: bytes) -> str:
     """Extract tables first, then remaining text."""
     texts = []
+    import pdfplumber
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for page in pdf.pages:
             tables = page.extract_tables()
@@ -196,6 +191,7 @@ def extract_with_ocr(file_bytes: bytes) -> str:
     try:
         import pytesseract
         from PIL import Image
+        import fitz  # PyMuPDF fallback
 
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         texts = []
@@ -211,6 +207,7 @@ def extract_with_ocr(file_bytes: bytes) -> str:
 
 
 def extract_docx(file_bytes: bytes) -> str:
+    import docx
     doc = docx.Document(io.BytesIO(file_bytes))
     parts = []
     for para in doc.paragraphs:
@@ -377,6 +374,7 @@ async def parse_agent(state: PipelineState) -> PipelineState:
 
         # Step 3: Detect language
         try:
+            from langdetect import detect as detect_language
             lang = detect_language(raw_text[:500])
         except Exception:
             lang = "en"

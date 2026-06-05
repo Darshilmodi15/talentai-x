@@ -19,14 +19,18 @@ from app.services.taxonomy_service import seed_taxonomy_if_empty
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic."""
+    import asyncio
+
     # Startup
     print("🚀 TalentAI-X starting up...")
     await init_db()
     print("✅ Database initialized")
-    await init_chroma()
-    print("✅ ChromaDB initialized")
-    await seed_taxonomy_if_empty()
-    print("✅ Skill taxonomy ready")
+    
+    # Run heavy initializations in the background so uvicorn binds to PORT immediately
+    asyncio.create_task(init_chroma())
+    asyncio.create_task(seed_taxonomy_if_empty())
+    print("⏳ ChromaDB and Taxonomy initialization started in background")
+    
     print("✅ TalentAI-X is ready!")
     yield
     # Shutdown

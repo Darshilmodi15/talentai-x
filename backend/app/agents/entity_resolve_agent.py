@@ -9,20 +9,12 @@ Agent 4: Entity Resolver
 """
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
+
 
 from app.core.pipeline_state import PipelineState, AgentTrace, PlatformProfile
 from app.core.config import settings
-
-try:
-    import jellyfish
-    import httpx
-    from sentence_transformers import SentenceTransformer
-    from sklearn.metrics.pairwise import cosine_similarity
-    import networkx as nx
-except ImportError:
-    pass
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -112,6 +104,7 @@ def extract_all_links_from_resume(parsed: dict) -> dict[str, str]:
 async def fetch_github_profile(url: str) -> Optional[PlatformProfile]:
     """Fetch public GitHub profile data."""
     try:
+        import httpx
         match = PLATFORM_PATTERNS["github"].search(url)
         if not match:
             return None
@@ -139,7 +132,7 @@ async def fetch_github_profile(url: str) -> Optional[PlatformProfile]:
                 lang = repo.get("language")
                 if lang:
                     lang_counts[lang] = lang_counts.get(lang, 0) + 1
-            top_languages = sorted(lang_counts, key=lang_counts.get, reverse=True)[:5]
+            top_languages = sorted(lang_counts, key=lambda x: lang_counts[x], reverse=True)[:5]
 
         return PlatformProfile(
             platform="github",
@@ -161,6 +154,7 @@ async def fetch_github_profile(url: str) -> Optional[PlatformProfile]:
 async def fetch_generic_profile(url: str, platform: str) -> Optional[PlatformProfile]:
     """Generic scraper using Open Graph tags for unknown platforms."""
     try:
+        import httpx
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url, follow_redirects=True)
             if resp.status_code != 200:
@@ -209,6 +203,7 @@ async def fetch_platform_profile(platform: str, url: str) -> Optional[PlatformPr
 def compute_name_match_score(resume_name: str, platform_name: Optional[str]) -> float:
     if not resume_name or not platform_name:
         return 0.0
+    import jellyfish
     return jellyfish.jaro_winkler_similarity(
         resume_name.lower().strip(),
         platform_name.lower().strip(),
@@ -219,9 +214,24 @@ def compute_bio_similarity(resume_summary: Optional[str], platform_bio: Optional
     if not resume_summary or not platform_bio:
         return 0.0
     try:
-        model = SentenceTransformer(settings.EMBEDDING_MODEL)
-        embs = model.encode([resume_summary[:500], platform_bio[:500]])
-        return float(cosine_similarity([embs[0]], [embs[1]])[0][0])
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        
+        # Batch embed both texts
+        res = genai.embed_content(
+            model=settings.EMBEDDING_MODEL,
+            content=[resume_summary[:500], platform_bio[:500]],
+            task_type="semantic_similarity"
+        )
+        embs = res['embedding']
+        
+        a, b = embs[0], embs[1]
+        dot = sum(x * y for x, y in zip(a, b))
+        mag_a = sum(x * x for x in a) ** 0.5
+        mag_b = sum(x * x for x in b) ** 0.5
+        if mag_a * mag_b == 0:
+            return 0.0
+        return float(dot / (mag_a * mag_b))
     except Exception:
         return 0.0
 
@@ -294,7 +304,7 @@ async def entity_resolve_agent(state: PipelineState) -> PipelineState:
 
     trace: AgentTrace = {
         "agent": "entity_resolve_agent",
-        "started_at": datetime.utcnow().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
         "duration_ms": int((time.time() - started) * 1000),
         "status": status,
         "quality_score": state.get("entity_confidence", 0.0),
