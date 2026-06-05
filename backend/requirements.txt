@@ -4,7 +4,7 @@ uvicorn[standard]==0.30.1
 python-multipart==0.0.9
 
 # ─── AI / LLM Orchestration ───────────────────────────────────────
-google-generativeai>=0.8.0
+google-generativeai==0.5.4
 langgraph==0.1.19
 langchain-core==0.2.22
 langchain-google-genai==1.0.6
