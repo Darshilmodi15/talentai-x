@@ -6,7 +6,7 @@ python-multipart==0.0.9
 # ─── AI / LLM Orchestration ───────────────────────────────────────
 google-generativeai>=0.8.0
 langgraph==0.1.19
-langchain-core==0.2.10
+langchain-core==0.2.22
 langchain-google-genai>=1.0.0
 
 # ─── Embeddings ───────────────────────────────────────────────────
