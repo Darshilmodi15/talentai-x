@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { AxiosResponse, AxiosError } from 'axios'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/_/backend'
 const API_KEY = import.meta.env.VITE_API_KEY || 'dev_key_change_in_production'
@@ -11,9 +11,9 @@ export const api = axios.create({
 })
 
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const message = error.response?.data?.detail || 'An error occurred'
+  (response: AxiosResponse) => response,
+  (error: AxiosError<{ detail?: string }>) => {
+    const message = (error.response?.data as { detail?: string })?.detail || 'An error occurred'
     return Promise.reject(new Error(message))
   }
 )
