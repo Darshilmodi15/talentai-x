@@ -14,7 +14,11 @@ class Settings(BaseSettings):
     # API Security
     SECRET_KEY: str = "change_this_in_production"
     API_KEY_HEADER: str = "X-API-Key"
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://talentai-x.vercel.app",
+    ]
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://talentai:talentai_secret@localhost:5433/talentai_db"

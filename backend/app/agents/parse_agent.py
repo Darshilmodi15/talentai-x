@@ -21,7 +21,7 @@ import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
-logger.warning("PARSE_AGENT_VERSION_2026_06_05")
+logger.warning("PARSE_AGENT_VERSION_2026_06_06_v2")
 # ──────────────────────────────────────────────────────────────────
 # PROMPTS — tightly scoped per extraction task
 # ──────────────────────────────────────────────────────────────────
@@ -313,14 +313,20 @@ async def call_gemini(prompt: str, max_tokens: int = 1500) -> dict:
         # Remove markdown wrappers
         cleaned_response = content
         import re
-        match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
-        if match:
-            cleaned_response = match.group(1).strip()
+        # Try standard markdown fence first
+        fence_match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
+        if fence_match:
+            cleaned_response = fence_match.group(1).strip()
         else:
-            # Fallback if unclosed or just backticks
-            cleaned_response = content.strip("`").strip()
-            if cleaned_response.startswith("json"):
-                cleaned_response = cleaned_response[4:].strip()
+            # Try to find JSON object boundaries directly
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                cleaned_response = json_match.group(0).strip()
+            else:
+                # Last resort: strip backticks
+                cleaned_response = content.strip("`").strip()
+                if cleaned_response.startswith("json"):
+                    cleaned_response = cleaned_response[4:].strip()
 
         logger.error("=== CLEANED RESPONSE START ===")
         logger.error(cleaned_response)
@@ -330,7 +336,12 @@ async def call_gemini(prompt: str, max_tokens: int = 1500) -> dict:
             parsed = json.loads(cleaned_response)
         except Exception as e:
             logger.exception("JSON parse failed")
-            raise ValueError(f"JSON Parse Failed.\nException:\n{e}")
+            raise ValueError(
+                f"JSON Parse Failed.\n"
+                f"Exception: {type(e).__name__}: {e}\n"
+                f"Raw response length: {len(content)}\n"
+                f"Cleaned response (first 500 chars): {cleaned_response[:500]}"
+            )
 
         if not isinstance(parsed, dict):
             raise ValueError("Gemini did not return a JSON object")
@@ -348,17 +359,33 @@ async def call_gemini(prompt: str, max_tokens: int = 1500) -> dict:
 
 
 async def extract_all_parallel(raw_text: str) -> tuple[dict, dict, dict, dict]:
-    """Run all 4 extraction prompts concurrently."""
+    """Run all 4 extraction prompts concurrently.
+    Uses return_exceptions=True so one failed prompt doesn't kill the others.
+    """
     # Truncate to avoid context window issues
     text_chunk = raw_text[:6000]
 
-    basic, experience, education, skills = await asyncio.gather(
+    results = await asyncio.gather(
         call_gemini(PROMPT_BASIC_INFO.replace("{text}", text_chunk), max_tokens=800),
         call_gemini(PROMPT_EXPERIENCE.replace("{text}", text_chunk), max_tokens=1500),
         call_gemini(PROMPT_EDUCATION.replace("{text}", text_chunk), max_tokens=600),
         call_gemini(PROMPT_SKILLS_CERTS.replace("{text}", text_chunk), max_tokens=1000),
+        return_exceptions=True,
     )
-    return basic, experience, education, skills
+
+    labels = ["basic_info", "experience", "education", "skills_certs"]
+    processed = []
+    for label, result in zip(labels, results):
+        if isinstance(result, Exception):
+            logger.error(
+                f"Gemini extraction '{label}' failed: "
+                f"{type(result).__name__}: {result}"
+            )
+            processed.append({})
+        else:
+            processed.append(result)
+
+    return processed[0], processed[1], processed[2], processed[3]
 
 
 def merge_extractions(basic: dict, experience: dict, education: dict, skills: dict) -> dict:
