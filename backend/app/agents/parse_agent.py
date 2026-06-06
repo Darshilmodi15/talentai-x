@@ -391,26 +391,13 @@ async def call_gemini(prompt: str, state: dict, max_tokens: int = 2500, _retries
 
 
 
-def merge_extractions(basic: dict, experience: dict, education: dict, skills: dict) -> dict:
-    """Merge the 4 parallel extraction results into one clean dict."""
-    return {
-        "name": basic.get("name"),
-        "email": basic.get("email"),
-        "phone": basic.get("phone"),
-        "location": basic.get("location"),
-        "summary": basic.get("summary"),
-        "linkedin_url": basic.get("linkedin_url"),
-        "github_url": basic.get("github_url"),
-        "portfolio_url": basic.get("portfolio_url"),
-        "other_urls": basic.get("other_urls", []),
-        "experience": experience.get("experience", []),
-        "experience_months_total": experience.get("experience_months_total", 0),
-        "education": education.get("education", []),
-        "skills": skills.get("skills", []),
-        "certifications": skills.get("certifications", []),
-        "projects": skills.get("projects", []),
-        "publications": skills.get("publications", []),
-    }
+async def extract_all_info(raw_text: str, state: dict) -> dict:
+    """Run a single extraction prompt to conserve quotas."""
+    job_id = state.get("job_id", "unknown")
+    text_chunk = raw_text[:8000]
+    logger.info(f"Starting Gemini extraction, text chunk length={len(text_chunk)}, job_id={job_id}")
+    
+    return await call_gemini(PROMPT_EXTRACT_ALL.replace("{text}", text_chunk), state, max_tokens=2500)
 
 
 def compute_parse_confidence(parsed: dict) -> float:
