@@ -403,6 +403,10 @@ async def parse_agent(state: PipelineState) -> PipelineState:
     started = time.time()
     retry_count = 0
     error_msg = None
+    traceback_str = None
+    exception_type = None
+    raw_gemini_response = None
+    cleaned_gemini_response = None
 
     try:
         # Step 1: Detect layout for PDFs
