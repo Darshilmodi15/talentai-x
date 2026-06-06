@@ -114,3 +114,4 @@ class PipelineState(TypedDict):
     traces: list[AgentTrace]
     errors: list[str]
     overall_status: str  # "completed" | "partial" | "failed"
+    gemini_api_calls: int
