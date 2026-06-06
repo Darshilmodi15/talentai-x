@@ -9,6 +9,7 @@ Agent 1: Resume Parser
 import asyncio
 import json
 import time
+import random
 from datetime import datetime, timezone
 from typing import Optional, Any
 import io
@@ -21,7 +22,19 @@ import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
-logger.warning("PARSE_AGENT_VERSION_2026_06_06_v2")
+logger.warning("PARSE_AGENT_VERSION_2026_06_06_v3_QUOTA_FIX")
+
+# Patterns that indicate Gemini quota/rate-limit errors
+QUOTA_ERROR_PATTERNS = [
+    "429",
+    "too many requests",
+    "resource exhausted",
+    "resourceexhausted",
+    "quota exceeded",
+    "rate limit",
+    "ratelimit",
+    "generaterequestsperday",
+]
 # ──────────────────────────────────────────────────────────────────
 # PROMPTS — tightly scoped per extraction task
 # ──────────────────────────────────────────────────────────────────
@@ -287,83 +300,134 @@ class GeminiCallError(Exception):
         self.traceback_str = traceback_str
         self.exception_type = exception_type
 
-async def call_gemini(prompt: str, max_tokens: int = 1500) -> dict:
-    """Single async Gemini call. Returns parsed JSON or raises exception to track failure."""
+
+class GeminiQuotaError(GeminiCallError):
+    """Raised specifically for 429 / quota / rate-limit errors from Gemini.
+    These should NEVER be silently swallowed."""
+    pass
+
+
+def _is_quota_error(exception: Exception) -> bool:
+    """Check if an exception is a Gemini quota/rate-limit error."""
+    error_str = str(exception).lower()
+    return any(pattern in error_str for pattern in QUOTA_ERROR_PATTERNS)
+
+async def call_gemini(prompt: str, max_tokens: int = 1500, _retries: int = 3) -> dict:
+    """Single async Gemini call with exponential backoff for 429 errors.
+    Returns parsed JSON or raises GeminiQuotaError / GeminiCallError."""
     import traceback
     content = ""
     cleaned_response = ""
-    try:
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel(settings.GEMINI_MODEL)
-        
-        response = await model.generate_content_async(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                max_output_tokens=max_tokens,
-                temperature=0.1,
-            ),
-        )
-        content = response.text.strip()
-        logger.info(f"Raw Gemini response: {content}")
+    last_exception = None
 
-        logger.error("=== GEMINI RAW START ===")
-        logger.error(content)
-        logger.error("=== GEMINI RAW END ===")
-
-        # Remove markdown wrappers
-        cleaned_response = content
-        import re
-        # Try standard markdown fence first
-        fence_match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
-        if fence_match:
-            cleaned_response = fence_match.group(1).strip()
-        else:
-            # Try to find JSON object boundaries directly
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            if json_match:
-                cleaned_response = json_match.group(0).strip()
-            else:
-                # Last resort: strip backticks
-                cleaned_response = content.strip("`").strip()
-                if cleaned_response.startswith("json"):
-                    cleaned_response = cleaned_response[4:].strip()
-
-        logger.error("=== CLEANED RESPONSE START ===")
-        logger.error(cleaned_response)
-        logger.error("=== CLEANED RESPONSE END ===")
-
+    for attempt in range(_retries):
         try:
-            parsed = json.loads(cleaned_response)
-        except Exception as e:
-            logger.exception("JSON parse failed")
-            raise ValueError(
-                f"JSON Parse Failed.\n"
-                f"Exception: {type(e).__name__}: {e}\n"
-                f"Raw response length: {len(content)}\n"
-                f"Cleaned response (first 500 chars): {cleaned_response[:500]}"
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel(settings.GEMINI_MODEL)
+
+            logger.info(f"Gemini call attempt {attempt + 1}/{_retries}, prompt length={len(prompt)}")
+
+            response = await model.generate_content_async(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=max_tokens,
+                    temperature=0.1,
+                ),
             )
+            content = response.text.strip()
+            logger.info(f"Gemini response received, length={len(content)}")
+            logger.info(f"Raw Gemini response (first 500): {content[:500]}")
 
-        if not isinstance(parsed, dict):
-            raise ValueError("Gemini did not return a JSON object")
+            # Remove markdown wrappers
+            cleaned_response = content
+            import re
+            # Try standard markdown fence first
+            fence_match = re.search(r'```(?:json)?\s*(.*?)\s*```', content, re.DOTALL)
+            if fence_match:
+                cleaned_response = fence_match.group(1).strip()
+            else:
+                # Try to find JSON object boundaries directly
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if json_match:
+                    cleaned_response = json_match.group(0).strip()
+                else:
+                    # Last resort: strip backticks
+                    cleaned_response = content.strip("`").strip()
+                    if cleaned_response.startswith("json"):
+                        cleaned_response = cleaned_response[4:].strip()
 
-        return parsed
-    except Exception as e:
-        logger.exception("CALL_GEMINI_FAILED")
-        raise GeminiCallError(
-            f"CALL_GEMINI_FAILED\nTYPE={type(e).__name__}\nERROR={str(e)}\nTRACEBACK={traceback.format_exc()}",
-            raw_response=content,
-            cleaned_response=cleaned_response,
-            traceback_str=traceback.format_exc(),
-            exception_type=type(e).__name__
-        )
+            logger.info(f"Cleaned response (first 500): {cleaned_response[:500]}")
+
+            try:
+                parsed = json.loads(cleaned_response)
+            except Exception as e:
+                logger.exception("JSON parse failed")
+                raise ValueError(
+                    f"JSON Parse Failed.\n"
+                    f"Exception: {type(e).__name__}: {e}\n"
+                    f"Raw response length: {len(content)}\n"
+                    f"Cleaned response (first 500 chars): {cleaned_response[:500]}"
+                )
+
+            if not isinstance(parsed, dict):
+                raise ValueError("Gemini did not return a JSON object")
+
+            return parsed
+
+        except Exception as e:
+            last_exception = e
+            logger.error(f"CALL_GEMINI_FAILED (attempt {attempt + 1}/{_retries}): {type(e).__name__}: {e}")
+
+            # If it's a quota/rate-limit error, retry with exponential backoff
+            if _is_quota_error(e):
+                if attempt < _retries - 1:
+                    backoff = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Gemini quota/rate-limit error. Retrying in {backoff:.1f}s...")
+                    await asyncio.sleep(backoff)
+                    continue
+                else:
+                    # All retries exhausted for quota error — raise specific exception
+                    logger.error(f"GEMINI QUOTA ERROR — all {_retries} retries exhausted")
+                    raise GeminiQuotaError(
+                        f"GEMINI_QUOTA_EXHAUSTED after {_retries} retries\n"
+                        f"TYPE={type(e).__name__}\nERROR={str(e)}\n"
+                        f"TRACEBACK={traceback.format_exc()}",
+                        raw_response=content,
+                        cleaned_response=cleaned_response,
+                        traceback_str=traceback.format_exc(),
+                        exception_type=type(e).__name__,
+                    )
+            else:
+                # Non-quota error — don't retry, raise immediately
+                raise GeminiCallError(
+                    f"CALL_GEMINI_FAILED\nTYPE={type(e).__name__}\nERROR={str(e)}\n"
+                    f"TRACEBACK={traceback.format_exc()}",
+                    raw_response=content,
+                    cleaned_response=cleaned_response,
+                    traceback_str=traceback.format_exc(),
+                    exception_type=type(e).__name__,
+                )
+
+    # Should never reach here, but just in case
+    raise GeminiCallError(
+        f"CALL_GEMINI_FAILED after {_retries} attempts",
+        raw_response=content,
+        cleaned_response=cleaned_response,
+        traceback_str="",
+        exception_type=type(last_exception).__name__ if last_exception else "Unknown",
+    )
 
 
 async def extract_all_parallel(raw_text: str) -> tuple[dict, dict, dict, dict]:
     """Run all 4 extraction prompts concurrently.
     Uses return_exceptions=True so one failed prompt doesn't kill the others.
+
+    IMPORTANT: If ALL 4 calls fail, or ANY fail with a quota error,
+    this function raises an exception instead of returning empty dicts.
     """
     # Truncate to avoid context window issues
     text_chunk = raw_text[:6000]
+    logger.info(f"Starting parallel Gemini extraction, text chunk length={len(text_chunk)}")
 
     results = await asyncio.gather(
         call_gemini(PROMPT_BASIC_INFO.replace("{text}", text_chunk), max_tokens=800),
@@ -375,16 +439,55 @@ async def extract_all_parallel(raw_text: str) -> tuple[dict, dict, dict, dict]:
 
     labels = ["basic_info", "experience", "education", "skills_certs"]
     processed = []
+    failures = []
+    quota_errors = []
+
     for label, result in zip(labels, results):
-        if isinstance(result, Exception):
+        if isinstance(result, GeminiQuotaError):
+            logger.error(
+                f"QUOTA ERROR in '{label}': {type(result).__name__}: {result}"
+            )
+            quota_errors.append((label, result))
+            failures.append((label, result))
+            processed.append({})
+        elif isinstance(result, Exception):
             logger.error(
                 f"Gemini extraction '{label}' failed: "
                 f"{type(result).__name__}: {result}"
             )
+            failures.append((label, result))
             processed.append({})
         else:
+            assert isinstance(result, dict)
+            logger.info(f"Gemini extraction '{label}' succeeded: {list(result.keys())}")
             processed.append(result)
 
+    # If ANY call hit a quota error, raise immediately — don't return partial empty data
+    if quota_errors:
+        label, err = quota_errors[0]
+        raise GeminiQuotaError(
+            f"Gemini quota/rate-limit error in '{label}' extraction. "
+            f"{len(quota_errors)}/{len(labels)} calls hit quota limits. "
+            f"Original error: {err}",
+            raw_response=getattr(err, 'raw_response', ''),
+            cleaned_response=getattr(err, 'cleaned_response', ''),
+            traceback_str=getattr(err, 'traceback_str', ''),
+            exception_type=getattr(err, 'exception_type', 'GeminiQuotaError'),
+        )
+
+    # If ALL 4 calls failed (non-quota), raise so parse_agent marks as failed
+    if len(failures) == len(labels):
+        label, err = failures[0]
+        raise GeminiCallError(
+            f"All {len(labels)} Gemini extraction calls failed. "
+            f"First error ({label}): {type(err).__name__}: {err}",
+            raw_response=getattr(err, 'raw_response', ''),
+            cleaned_response=getattr(err, 'cleaned_response', ''),
+            traceback_str=getattr(err, 'traceback_str', ''),
+            exception_type=getattr(err, 'exception_type', type(err).__name__),
+        )
+
+    logger.info(f"Extraction results: {len(labels) - len(failures)}/{len(labels)} succeeded")
     return processed[0], processed[1], processed[2], processed[3]
 
 
@@ -436,15 +539,20 @@ async def parse_agent(state: PipelineState) -> PipelineState:
     cleaned_gemini_response = None
 
     try:
+        logger.info(f"=== PARSE_AGENT START === job_id={state.get('job_id')} file={state.get('file_name')}")
+
         # Step 1: Detect layout for PDFs
         layout = "single_column"
         if state["file_type"] == "pdf":
             layout = detect_pdf_layout(state["raw_file"])
+        logger.info(f"Layout detected: {layout}")
 
         state["layout_type"] = layout
 
         # Step 2: Extract raw text
         raw_text = get_raw_text(state["raw_file"], state["file_type"], layout)
+        logger.info(f"PDF text extraction: {len(raw_text)} chars")
+        logger.info(f"Extracted text (first 500 chars): {raw_text[:500]}")
 
         if not raw_text.strip():
             raise ValueError("No text could be extracted from the file")
@@ -456,6 +564,7 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         except Exception:
             lang = "en"
         state["resume_language"] = lang
+        logger.info(f"Language detected: {lang}")
 
         # Step 4: Detect AI content
         state["ai_content_probability"] = detect_ai_content(raw_text)
@@ -463,43 +572,90 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         # Step 5: Parallel LLM extraction (with one retry)
         basic, experience, education, skills = await extract_all_parallel(raw_text)
 
-        # Retry if basic info is completely empty
+        # Retry if basic info is completely empty (non-quota failures only)
         if not basic and retry_count < 1:
             retry_count += 1
+            logger.warning("Basic info empty, retrying extraction...")
             basic, experience, education, skills = await extract_all_parallel(raw_text)
 
         # Step 6: Merge
         parsed = merge_extractions(basic, experience, education, skills)
-        state["parsed"] = parsed
-        state["parse_confidence"] = compute_parse_confidence(parsed)
-        state["experience_months_total"] = parsed.get("experience_months_total", 0)
-        status = "success"
+        logger.info(
+            f"Merged parse result: name={parsed.get('name')}, "
+            f"email={parsed.get('email')}, "
+            f"phone={parsed.get('phone')}, "
+            f"skills_count={len(parsed.get('skills', []))}, "
+            f"experience_count={len(parsed.get('experience', []))}, "
+            f"education_count={len(parsed.get('education', []))}"
+        )
 
-    except Exception as e:
-        import traceback
-        error_msg = str(e)
+        state["parsed"] = parsed
+        confidence = compute_parse_confidence(parsed)
+        state["parse_confidence"] = confidence
+        state["experience_months_total"] = parsed.get("experience_months_total", 0)
+
+        # Validate: if confidence is 0, the parse is effectively empty
+        if confidence == 0.0:
+            logger.error(
+                "Parse confidence is 0.0 — all key fields are empty. "
+                "Marking as failed despite no exception."
+            )
+            status = "failed"
+            error_msg = (
+                "Parse completed but extracted zero data. "
+                "All key fields (name, email, skills, experience, education) are empty. "
+                "This likely indicates a Gemini API issue or incompatible resume format."
+            )
+            state["errors"] = state.get("errors", []) + [f"parse_agent: {error_msg}"]
+        else:
+            status = "success"
+            logger.info(f"Parse succeeded with confidence={confidence}")
+
+    except GeminiQuotaError as e:
+        import traceback as tb
+        error_msg = f"GEMINI QUOTA EXCEEDED: {str(e)}"
+        logger.error(f"=== PARSE_AGENT QUOTA ERROR === {error_msg}")
         state["errors"] = state.get("errors", []) + [f"parse_agent: {error_msg}"]
         state["parsed"] = {}
         state["parse_confidence"] = 0.0
-        state["layout_type"] = "unknown"
-        state["resume_language"] = "en"
-        state["ai_content_probability"] = 0.0
+        state["layout_type"] = state.get("layout_type", "unknown")
+        state["resume_language"] = state.get("resume_language", "en")
+        state["ai_content_probability"] = state.get("ai_content_probability", 0.0)
         state["experience_months_total"] = 0
         status = "failed"
-        
-        traceback_str = getattr(e, "traceback_str", traceback.format_exc())
+
+        traceback_str = getattr(e, "traceback_str", tb.format_exc())
+        exception_type = getattr(e, "exception_type", type(e).__name__)
+        raw_gemini_response = getattr(e, "raw_response", None)
+        cleaned_gemini_response = getattr(e, "cleaned_response", None)
+
+    except Exception as e:
+        import traceback as tb
+        error_msg = str(e)
+        logger.error(f"=== PARSE_AGENT ERROR === {type(e).__name__}: {error_msg}")
+        state["errors"] = state.get("errors", []) + [f"parse_agent: {error_msg}"]
+        state["parsed"] = {}
+        state["parse_confidence"] = 0.0
+        state["layout_type"] = state.get("layout_type", "unknown")
+        state["resume_language"] = state.get("resume_language", "en")
+        state["ai_content_probability"] = state.get("ai_content_probability", 0.0)
+        state["experience_months_total"] = 0
+        status = "failed"
+
+        traceback_str = getattr(e, "traceback_str", tb.format_exc())
         exception_type = getattr(e, "exception_type", type(e).__name__)
         raw_gemini_response = getattr(e, "raw_response", None)
         cleaned_gemini_response = getattr(e, "cleaned_response", None)
 
     # Record trace
+    fields_extracted = len([v for v in (state.get("parsed") or {}).values() if v])
     trace: AgentTrace = {
         "agent": "parse_agent",
         "started_at": datetime.now(timezone.utc).isoformat(),
         "duration_ms": int((time.time() - started) * 1000),
         "status": status,
         "quality_score": state.get("parse_confidence", 0.0),
-        "fields_extracted": len([v for v in (state.get("parsed") or {}).values() if v]),
+        "fields_extracted": fields_extracted,
         "retry_count": retry_count,
         "error": error_msg,
     }
@@ -509,6 +665,11 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         trace["traceback"] = traceback_str
         trace["raw_gemini_response"] = raw_gemini_response
         trace["cleaned_gemini_response"] = cleaned_gemini_response
+
+    logger.info(
+        f"=== PARSE_AGENT END === status={status} fields_extracted={fields_extracted} "
+        f"confidence={state.get('parse_confidence', 0.0)} duration_ms={trace['duration_ms']}"
+    )
 
     state["traces"] = state.get("traces", []) + [trace]
     return state

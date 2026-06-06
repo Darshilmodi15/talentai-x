@@ -7,7 +7,7 @@ GET  /api/v1/jobs/{job_id}/trace — agent execution trace
 """
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks, Request
@@ -69,6 +69,9 @@ async def process_resume_task(
     Background task: run pipeline and persist results.
     Called after the API has already returned 202.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     from app.db.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
@@ -88,24 +91,48 @@ async def process_resume_task(
                 job_id=job_id,
             )
 
-            # Save candidate to DB
-            candidate_id = await save_candidate_from_state(state, job_id, db)
-            state["candidate_id"] = str(candidate_id)
+            overall_status = state.get("overall_status", "failed")
+            logger.info(f"Pipeline completed for job {job_id}: overall_status={overall_status}")
 
-            # Update job record
-            job.status = (
-                ProcessingStatus.COMPLETED
-                if state.get("overall_status") == "completed"
-                else ProcessingStatus.PARTIAL
-            )
-            job.completed_at = datetime.utcnow()
-            job.traces = state.get("traces", [])
-            await db.commit()
+            # Always save traces for debugging
+            job.traces = list(state.get("traces", []))  # type: ignore[assignment]
+
+            if overall_status == "failed":
+                # ── FAILED: Do NOT create a candidate with empty data ──
+                errors = state.get("errors", [])
+                error_summary = "; ".join(errors) if errors else "Parse pipeline failed — no data extracted"
+
+                job.status = ProcessingStatus.FAILED
+                job.error_message = error_summary
+                job.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+
+                logger.error(
+                    f"Job {job_id} FAILED — no candidate created. "
+                    f"Error: {error_summary}"
+                )
+            else:
+                # ── COMPLETED or PARTIAL: Save candidate ──
+                candidate_id = await save_candidate_from_state(state, job_id, db)
+                state["candidate_id"] = str(candidate_id)
+
+                job.status = (
+                    ProcessingStatus.COMPLETED
+                    if overall_status == "completed"
+                    else ProcessingStatus.PARTIAL
+                )
+                job.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+
+                logger.info(
+                    f"Job {job_id} {job.status.value} — candidate {candidate_id} created"
+                )
 
         except Exception as e:
+            logger.exception(f"Job {job_id} — unhandled exception in process_resume_task")
             job.status = ProcessingStatus.FAILED
-            job.error_message = str(e)
-            job.completed_at = datetime.utcnow()
+            job.error_message = f"{type(e).__name__}: {str(e)}"
+            job.completed_at = datetime.now(timezone.utc)
             await db.commit()
 
 

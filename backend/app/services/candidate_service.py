@@ -1,9 +1,12 @@
 """Candidate Service - persists parsed pipeline state to PostgreSQL"""
 import uuid
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.models import Candidate, Experience, Education, EmergingSkill
 from app.core.pipeline_state import PipelineState
+
+logger = logging.getLogger(__name__)
 
 
 async def save_candidate_from_state(
@@ -14,8 +17,31 @@ async def save_candidate_from_state(
     """
     Take the completed pipeline state and persist everything to the DB.
     Returns the candidate UUID.
+
+    Raises ValueError if parsed data is completely empty (defense in depth).
     """
     parsed = state.get("parsed") or {}
+
+    # ── Pre-save validation ──
+    key_fields = ["name", "email", "skills", "experience", "education"]
+    filled = [f for f in key_fields if parsed.get(f)]
+    logger.info(
+        f"save_candidate_from_state: job_id={job_id}, "
+        f"filled_fields={filled}, "
+        f"name={parsed.get('name')}, "
+        f"email={parsed.get('email')}, "
+        f"phone={parsed.get('phone')}, "
+        f"skills_count={len(parsed.get('skills', []))}, "
+        f"experience_count={len(parsed.get('experience', []))}, "
+        f"education_count={len(parsed.get('education', []))}"
+    )
+
+    if not filled:
+        raise ValueError(
+            f"Cannot save candidate with zero extracted data for job {job_id}. "
+            f"All key fields (name, email, skills, experience, education) are empty. "
+            f"This should not happen — the caller should check overall_status first."
+        )
     candidate_id = uuid.uuid4()
 
     # Main candidate record

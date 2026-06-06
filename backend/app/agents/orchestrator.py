@@ -5,12 +5,15 @@ Wires all 4 agents into a stateful pipeline with:
 - Graceful degradation (partial results if an agent fails)
 - Observability traces per agent
 """
+import logging
 from langgraph.graph import StateGraph, END
 from app.core.pipeline_state import PipelineState
 from app.agents.parse_agent import parse_agent
 from app.agents.normalize_agent import normalize_agent
 from app.agents.entity_resolve_agent import entity_resolve_agent
 from app.agents.match_agent import match_agent
+
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -21,14 +24,35 @@ async def parse_node(state: PipelineState) -> PipelineState:
     """Run parse agent with up to 2 retries."""
     for attempt in range(2):
         state = await parse_agent(state)
-        if state.get("parsed") and state.get("parse_confidence", 0) > 0.3:
+        confidence = state.get("parse_confidence", 0)
+        has_data = bool(state.get("parsed"))
+
+        logger.info(
+            f"parse_node attempt {attempt + 1}/2: "
+            f"has_data={has_data}, confidence={confidence}"
+        )
+
+        if has_data and confidence > 0.3:
             break
+
+    # After all retries, check if parse actually succeeded
+    final_confidence = state.get("parse_confidence", 0)
+    if final_confidence <= 0.3:
+        logger.error(
+            f"parse_node: all retries exhausted, confidence={final_confidence}. "
+            f"Marking overall_status=failed."
+        )
+        state["overall_status"] = "failed"
+
     return state
 
 
 async def normalize_node(state: PipelineState) -> PipelineState:
     """Run normalize agent. Skips if parse failed."""
-    if not state.get("parsed"):
+    parsed = state.get("parsed")
+    # Skip normalization if parse failed or returned empty data
+    if not parsed or state.get("overall_status") == "failed":
+        logger.warning("normalize_node: skipping — parse failed or empty")
         state["skills_canonical"] = []
         state["inferred_skills"] = []
         state["emerging_skills_found"] = []
@@ -38,6 +62,12 @@ async def normalize_node(state: PipelineState) -> PipelineState:
 
 async def entity_node(state: PipelineState) -> PipelineState:
     """Run entity resolver. Non-fatal — degrades gracefully."""
+    if state.get("overall_status") == "failed":
+        logger.warning("entity_node: skipping — pipeline already failed")
+        state["platform_profiles"] = {}
+        state["entity_confidence"] = 0.5
+        state["enriched_skills"] = []
+        return state
     return await entity_resolve_agent(state)
 
 
@@ -46,6 +76,11 @@ async def finalize_node(state: PipelineState) -> PipelineState:
     Determine overall pipeline status.
     Does NOT run matching (that's a separate API call with a JD).
     """
+    # If already marked failed by parse_node, preserve that
+    if state.get("overall_status") == "failed":
+        logger.info("finalize_node: pipeline status is FAILED (set by earlier stage)")
+        return state
+
     errors = state.get("errors", [])
     parse_ok = bool(state.get("parsed")) and state.get("parse_confidence", 0) > 0.3
     normalize_ok = len(state.get("skills_canonical", [])) > 0
@@ -57,6 +92,7 @@ async def finalize_node(state: PipelineState) -> PipelineState:
     else:
         state["overall_status"] = "failed"
 
+    logger.info(f"finalize_node: overall_status={state['overall_status']}")
     return state
 
 
@@ -143,5 +179,5 @@ async def run_parse_pipeline(
         "overall_status": "processing",
     }
 
-    final_state = await pipeline.ainvoke(initial_state)
+    final_state = await pipeline.ainvoke(initial_state)  # type: ignore[attr-defined]
     return final_state
