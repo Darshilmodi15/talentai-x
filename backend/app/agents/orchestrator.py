@@ -27,6 +27,12 @@ async def parse_node(state: PipelineState) -> PipelineState:
         confidence = state.get("parse_confidence", 0)
         has_data = bool(state.get("parsed"))
 
+        # FATAL ERROR CHECK: Break orchestrator loop immediately on Quota limits
+        if any("Gemini quota exceeded" in err for err in state.get("errors", [])):
+            logger.error(f"parse_node: Gemini quota exceeded on attempt {attempt + 1}. Breaking retry storm.")
+            state["overall_status"] = "failed"
+            break
+
         logger.info(
             f"parse_node attempt {attempt + 1}/2: "
             f"has_data={has_data}, confidence={confidence}"

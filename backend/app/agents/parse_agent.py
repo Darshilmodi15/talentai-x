@@ -296,7 +296,12 @@ async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500,
             genai.configure(api_key=settings.GEMINI_API_KEY)
             model = genai.GenerativeModel(settings.GEMINI_MODEL)
 
-            logger.info(f"Calling Gemini | agent=parse_agent | job_id={job_id} | attempt={attempt+1}/{_retries}")
+            api_key_prefix = settings.GEMINI_API_KEY[:6] + "..." if settings.GEMINI_API_KEY else "MISSING_KEY"
+            estimated_tokens = len(prompt) // 4
+            logger.info(
+                f"Calling Gemini | agent=parse_agent | job_id={job_id} | attempt={attempt+1}/{_retries} | "
+                f"key_prefix={api_key_prefix} | model={settings.GEMINI_MODEL} | est_tokens_sent={estimated_tokens}"
+            )
 
             response = await model.generate_content_async(
                 prompt,
