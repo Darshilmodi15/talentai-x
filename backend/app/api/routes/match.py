@@ -152,21 +152,48 @@ async def match_candidate(
     db: AsyncSession = Depends(get_db),
     _: str = Depends(verify_api_key),
 ):
+    import logging
+    import traceback
+    logger = logging.getLogger(__name__)
+    
+    logger.info("STEP 1: route entered")
+
     # Load candidate
     try:
         cand_uuid = uuid.UUID(body.candidate_id)
+        candidate = await db.get(Candidate, cand_uuid)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        logger.info("STEP 2: candidate loaded")
+    except HTTPException:
+        raise
     except ValueError:
+        logger.error(f"Invalid candidate_id: {body.candidate_id}\n{traceback.format_exc()}")
         raise HTTPException(status_code=400, detail="Invalid candidate_id")
+    except Exception as e:
+        logger.error(f"Error loading candidate:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-    candidate = await db.get(Candidate, cand_uuid)
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
+    logger.info("STEP 3: job description validated")
 
     # Build state
-    state = await build_state_from_candidate(candidate)
+    try:
+        state = await build_state_from_candidate(candidate)
+    except Exception as e:
+        logger.error(f"Error building state:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Error building state")
+
+    logger.info("STEP 4: matching service started")
 
     # Run matching
-    state = await match_agent(state, body.job_description)
+    try:
+        state = await match_agent(state, body.job_description)
+    except Exception as e:
+        logger.error(f"Error running match_agent:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Matching service error")
+
+    logger.info("STEP 5: embeddings generated (handled within match_agent)")
+    logger.info("STEP 6: score computed (handled within match_agent)")
 
     # Handle catastrophic matching failure gracefully before DB inserts
     if "matching_failed" in state.get("hitl_triggers", []):
@@ -180,48 +207,55 @@ async def match_candidate(
             }
         )
 
+    logger.info("STEP 7: match result created")
+
     # Persist result
     match_id = None
     if body.save_result:
-        # Save or find job
-        job = Job(
-            title="Unspecified",
-            description=body.job_description,
-            required_skills=state.get("skill_gaps", []),
-        )
-        db.add(job)
-        await db.flush()
+        try:
+            # Save or find job
+            job = Job(
+                title="Unspecified",
+                description=body.job_description,
+                required_skills=state.get("skill_gaps", []),
+            )
+            db.add(job)
+            await db.flush()
 
-        match_status = (
-            MatchStatus.PENDING_REVIEW if state.get("hitl_required")
-            else MatchStatus.AUTO_MERGED
-        )
-        match_result = MatchResult(
-            candidate_id=cand_uuid,
-            job_id=job.id,
-            match_score=state["match_score"],
-            blind_score=state["blind_score"],
-            semantic_score=state["semantic_score"],
-            required_skill_coverage=state["required_skill_coverage"],
-            experience_depth_score=state["experience_depth_score"],
-            bias_delta=state["bias_delta"],
-            bias_flagged=state["bias_flagged"],
-            matched_skills=state["matched_skills"],
-            skill_gaps=state["skill_gaps"],
-            upskilling_suggestions=state["upskilling_suggestions"],
-            shap_values=state["shap_values"],
-            cot_reasoning=state["cot_reasoning"],
-            summary=state["match_summary"],
-            interview_questions=state["interview_questions"],
-            status=match_status,
-        )
-        db.add(match_result)
-        await db.flush()  # Ensure match_result.id is generated before HITL creation
+            match_status = (
+                MatchStatus.PENDING_REVIEW if state.get("hitl_required")
+                else MatchStatus.AUTO_MERGED
+            )
+            match_result = MatchResult(
+                candidate_id=cand_uuid,
+                job_id=job.id,
+                match_score=state["match_score"],
+                blind_score=state["blind_score"],
+                semantic_score=state["semantic_score"],
+                required_skill_coverage=state["required_skill_coverage"],
+                experience_depth_score=state["experience_depth_score"],
+                bias_delta=state["bias_delta"],
+                bias_flagged=state["bias_flagged"],
+                matched_skills=state["matched_skills"],
+                skill_gaps=state["skill_gaps"],
+                upskilling_suggestions=state["upskilling_suggestions"],
+                shap_values=state["shap_values"],
+                cot_reasoning=state["cot_reasoning"],
+                summary=state["match_summary"],
+                interview_questions=state["interview_questions"],
+                status=match_status,
+            )
+            db.add(match_result)
+            await db.flush()  # Ensure match_result.id is generated before HITL creation
+            match_id = str(match_result.id)
+        except Exception as e:
+            logger.error(f"Error persisting match result:\n{traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail="Database persistence error")
+
+        logger.info("STEP 8: hitl evaluation")
 
         # Add to HITL queue if needed
         if state.get("hitl_required"):
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info(
                 f"Attempting HITL creation | candidate_id={cand_uuid} | "
                 f"match_result_id={match_result.id} | triggers={state.get('hitl_triggers')}"
@@ -231,6 +265,7 @@ async def match_candidate(
                 logger.error("Cannot create HITL queue entry without match_result_id")
             else:
                 try:
+                    from datetime import timezone # Fix for the NameError
                     hitl = HITLReviewItem(
                         match_result_id=match_result.id,
                         trigger_reason=", ".join(state.get("hitl_triggers", [])),
@@ -241,11 +276,17 @@ async def match_candidate(
                     await db.flush()
                     logger.info("HITL creation success")
                 except Exception as e:
-                    logger.exception("Failed to create HITL queue record")
+                    logger.exception(f"Failed to create HITL queue record:\n{traceback.format_exc()}")
                     # Continue returning match response
 
-        await db.commit()
-        match_id = str(match_result.id)
+        try:
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Error committing transaction:\n{traceback.format_exc()}")
+            await db.rollback()
+            raise HTTPException(status_code=500, detail="Transaction commit failed")
+
+    logger.info("STEP 9: response returned")
 
     return MatchResponse(
         match_id=match_id,
