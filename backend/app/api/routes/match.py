@@ -36,7 +36,7 @@ class MatchRequest(BaseModel):
     weights: Optional[dict] = Field(
         None,
         description="Custom scoring weights. Keys: required_skill_coverage, semantic_similarity, experience_depth, nice_to_have_coverage",
-        example={"required_skill_coverage": 0.45, "semantic_similarity": 0.25}
+        json_schema_extra={"example": {"required_skill_coverage": 0.45, "semantic_similarity": 0.25}}
     )
     save_result: bool = Field(True, description="Persist match result to database")
 
@@ -112,6 +112,7 @@ async def build_state_from_candidate(candidate: Candidate) -> PipelineState:
         "traces": [],
         "errors": [],
         "overall_status": "completed",
+        "gemini_api_calls": 0,
     }
 
 
@@ -167,6 +168,18 @@ async def match_candidate(
     # Run matching
     state = await match_agent(state, body.job_description)
 
+    # Handle catastrophic matching failure gracefully before DB inserts
+    if "matching_failed" in state.get("hitl_triggers", []):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error_code": "MATCHING_FAILED",
+                "message": "Candidate matching could not be completed."
+            }
+        )
+
     # Persist result
     match_id = None
     if body.save_result:
@@ -203,16 +216,33 @@ async def match_candidate(
             status=match_status,
         )
         db.add(match_result)
+        await db.flush()  # Ensure match_result.id is generated before HITL creation
 
         # Add to HITL queue if needed
         if state.get("hitl_required"):
-            hitl = HITLReviewItem(
-                match_result_id=match_result.id,
-                trigger_reason=", ".join(state.get("hitl_triggers", [])),
-                priority="high" if state.get("bias_flagged") else "normal",
-                expires_at=datetime.utcnow() + timedelta(hours=48),
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"Attempting HITL creation | candidate_id={cand_uuid} | "
+                f"match_result_id={match_result.id} | triggers={state.get('hitl_triggers')}"
             )
-            db.add(hitl)
+            
+            if match_result.id is None:
+                logger.error("Cannot create HITL queue entry without match_result_id")
+            else:
+                try:
+                    hitl = HITLReviewItem(
+                        match_result_id=match_result.id,
+                        trigger_reason=", ".join(state.get("hitl_triggers", [])),
+                        priority="high" if state.get("bias_flagged") else "normal",
+                        expires_at=datetime.now(timezone.utc) + timedelta(hours=48),
+                    )
+                    db.add(hitl)
+                    await db.flush()
+                    logger.info("HITL creation success")
+                except Exception as e:
+                    logger.exception("Failed to create HITL queue record")
+                    # Continue returning match response
 
         await db.commit()
         match_id = str(match_result.id)
@@ -340,6 +370,34 @@ async def bias_audit(
     for profile_key, profile in test_profiles.items():
         # Build minimal state
         state: PipelineState = {
+            "job_id": "audit",
+            "raw_file": b"",
+            "file_name": "",
+            "file_type": "",
+            "layout_type": "",
+            "resume_language": "en",
+            "experience_months_total": profile["experience_years"] * 12,
+            "emerging_skills_found": [],
+            "platform_profiles": {},
+            "candidate_id": profile_key,
+            "match_score": 0.0,
+            "blind_score": 0.0,
+            "semantic_score": 0.0,
+            "required_skill_coverage": 0.0,
+            "experience_depth_score": 0.0,
+            "bias_delta": 0.0,
+            "bias_flagged": False,
+            "matched_skills": [],
+            "skill_gaps": [],
+            "upskilling_suggestions": {},
+            "shap_values": {},
+            "cot_reasoning": "",
+            "match_summary": "",
+            "interview_questions": {},
+            "hitl_required": False,
+            "hitl_triggers": [],
+            "overall_status": "completed",
+            "gemini_api_calls": 0,
             "parsed": {"name": profile["name"], "experience": [], "skills": profile["skills"]},
             "skills_canonical": [
                 {"raw": s, "canonical": s, "category": "technical",
