@@ -279,7 +279,7 @@ def _is_quota_error(exception: Exception) -> bool:
     error_str = str(exception).lower()
     return any(pattern in error_str for pattern in QUOTA_ERROR_PATTERNS)
 
-async def call_gemini(prompt: str, state: dict, max_tokens: int = 2500, _retries: int = 4) -> dict:
+async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500, _retries: int = 4) -> dict:
     """Single async Gemini call with exponential backoff for 429 errors.
     Returns parsed JSON or raises GeminiQuotaError / GeminiCallError."""
     import traceback
@@ -349,27 +349,26 @@ async def call_gemini(prompt: str, state: dict, max_tokens: int = 2500, _retries
             last_exception = e
             logger.error(f"CALL_GEMINI_FAILED (attempt {attempt + 1}/{_retries}): {type(e).__name__}: {e}")
 
-            # If it's a quota/rate-limit error, retry with exponential backoff
             if _is_quota_error(e):
-                if attempt < len(BACKOFFS):
-                    backoff = BACKOFFS[attempt]
-                    logger.warning(f"Gemini quota/rate-limit error. Retrying in {backoff}s...")
-                    await asyncio.sleep(backoff)
-                    continue
-                else:
-                    # All retries exhausted for quota error — raise specific exception
-                    logger.error(f"GEMINI QUOTA ERROR — all {_retries} retries exhausted")
-                    raise GeminiQuotaError(
-                        f"GEMINI_QUOTA_EXHAUSTED after {_retries} retries\n"
-                        f"TYPE={type(e).__name__}\nERROR={str(e)}\n"
-                        f"TRACEBACK={traceback.format_exc()}",
-                        raw_response=content,
-                        cleaned_response=cleaned_response,
-                        traceback_str=traceback.format_exc(),
-                        exception_type=type(e).__name__,
-                    )
+                logger.error("Gemini quota exceeded. Aborting without retry.")
+                raise GeminiQuotaError(
+                    f"GEMINI_QUOTA_EXHAUSTED\n"
+                    f"TYPE={type(e).__name__}\nERROR={str(e)}\n"
+                    f"TRACEBACK={traceback.format_exc()}",
+                    raw_response=content,
+                    cleaned_response=cleaned_response,
+                    traceback_str=traceback.format_exc(),
+                    exception_type=type(e).__name__,
+                )
+            
+            error_str = str(e).lower()
+            is_network = any(p in error_str for p in ["connection", "timeout", "transient", "network", "ssl"])
+            if is_network and attempt < len(BACKOFFS):
+                backoff = BACKOFFS[attempt]
+                logger.warning(f"Network error. Retrying in {backoff}s...")
+                await asyncio.sleep(backoff)
+                continue
             else:
-                # Non-quota error — don't retry, raise immediately
                 raise GeminiCallError(
                     f"CALL_GEMINI_FAILED\nTYPE={type(e).__name__}\nERROR={str(e)}\n"
                     f"TRACEBACK={traceback.format_exc()}",
@@ -391,7 +390,7 @@ async def call_gemini(prompt: str, state: dict, max_tokens: int = 2500, _retries
 
 
 
-async def extract_all_info(raw_text: str, state: dict) -> dict:
+async def extract_all_info(raw_text: str, state: PipelineState) -> dict:
     """Run a single extraction prompt to conserve quotas."""
     job_id = state.get("job_id", "unknown")
     text_chunk = raw_text[:8000]

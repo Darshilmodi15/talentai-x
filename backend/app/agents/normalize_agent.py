@@ -291,9 +291,14 @@ async def semantic_skill_lookup_batch(skills: list[str], state: PipelineState) -
                 break
             except Exception as e:
                 error_str = str(e).lower()
-                is_quota = any(pattern in error_str for pattern in ["too many requests", "resource exhausted", "quota exceeded", "rate limit", "generaterequestsperday"])
-                if is_quota and attempt < len(BACKOFFS):
-                    logger.warning(f"Gemini quota/rate-limit error. Retrying in {BACKOFFS[attempt]}s...")
+                is_quota = any(pattern in error_str for pattern in ["too many requests", "resource exhausted", "quota exceeded", "rate limit", "generaterequestsperday", "429"])
+                if is_quota:
+                    logger.error("Gemini quota exceeded. Aborting without retry.")
+                    raise ValueError("Gemini quota exceeded")
+                
+                is_network = any(p in error_str for p in ["connection", "timeout", "transient", "network", "ssl"])
+                if is_network and attempt < len(BACKOFFS):
+                    logger.warning(f"Network error. Retrying in {BACKOFFS[attempt]}s...")
                     await asyncio.sleep(BACKOFFS[attempt])
                     continue
                 else:
