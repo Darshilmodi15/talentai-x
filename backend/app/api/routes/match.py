@@ -17,7 +17,7 @@ from slowapi.util import get_remote_address
 from app.db.database import get_db
 from app.db.models.models import Candidate, Job, MatchResult, MatchStatus, HITLReviewItem
 from app.api.middleware.auth import verify_api_key
-from app.agents.match_agent import match_agent
+from app.agents.match_agent import match_agent, MatchAgentError
 from app.core.pipeline_state import PipelineState
 from app.core.config import settings
 from datetime import datetime, timedelta
@@ -189,6 +189,17 @@ async def match_candidate(
     # Run matching
     try:
         state = await match_agent(state, body.job_description)
+    except MatchAgentError as e:
+        logger.error(f"Embedding model failure: {e}")
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error_code": "EMBEDDING_MODEL_ERROR",
+                "message": "Candidate matching could not be completed."
+            }
+        )
     except Exception as e:
         logger.error(f"Error running match_agent:\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Matching service error")

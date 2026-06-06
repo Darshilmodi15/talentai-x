@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     print(f"🤖 Using Gemini model: {settings.GEMINI_MODEL}")
     import logging
     logging.getLogger(__name__).info(f"Using Gemini model: {settings.GEMINI_MODEL}")
+    logging.getLogger(__name__).info(f"Embedding model configured: {settings.EMBEDDING_MODEL}")
     await init_db()
     print("✅ Database initialized")
     

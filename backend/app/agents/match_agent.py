@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 from app.core.pipeline_state import PipelineState, AgentTrace, MatchedSkill
 from app.core.config import settings
 
+class MatchAgentError(Exception):
+    """Custom exception for match agent failures."""
+    pass
+
 
 
 
@@ -137,6 +141,7 @@ def embed_text(text: str) -> list[float]:
     import logging
     logger = logging.getLogger(__name__)
     logger.info("GEMINI CALL: match_agent.py | embed_text | job_id=unknown")
+    logger.info(f"Generating embedding | model={settings.EMBEDDING_MODEL} | text_length={len(text)}")
     genai.configure(api_key=settings.GEMINI_API_KEY)
     res = genai.embed_content(
         model=settings.EMBEDDING_MODEL,
@@ -491,8 +496,13 @@ async def match_agent(
         jd_text = " ".join(required + nice)
         
         logger.info("Generating embeddings")
-        cand_emb = embed_text(candidate_text)
-        jd_emb = embed_text(jd_text)
+        try:
+            cand_emb = embed_text(candidate_text)
+            jd_emb = embed_text(jd_text)
+        except Exception as e:
+            logger.exception("Embedding generation failed")
+            raise MatchAgentError(f"Embedding model failure: {str(e)}")
+        
         
         logger.info("Calculating similarity")
         semantic_score = cosine_sim(cand_emb, jd_emb)
@@ -605,7 +615,9 @@ async def match_agent(
         state["interview_questions"] = interview_questions
         state["hitl_required"] = hitl_required
         state["hitl_triggers"] = hitl_triggers
-
+    except MatchAgentError as e:
+        logger.error(f"MatchAgentError caught: {e}")
+        raise  # Re-raise to immediately stop and fail the route
     except Exception as e:
         logger.exception("Match pipeline failed")
         error_msg = str(e)
