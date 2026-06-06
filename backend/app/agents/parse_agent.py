@@ -279,6 +279,11 @@ class GeminiNotFoundError(GeminiCallError):
     pass
 
 
+class GeminiJSONError(GeminiCallError):
+    """Raised when JSON parsing fails completely even after repair."""
+    pass
+
+
 def _is_quota_error(exception: Exception) -> bool:
     """Check if an exception is a Gemini quota/rate-limit error."""
     error_str = str(exception).lower()
@@ -313,15 +318,59 @@ async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500,
                 f"key_prefix={api_key_prefix} | model={settings.GEMINI_MODEL} | est_tokens_sent={estimated_tokens}"
             )
 
+            from google.generativeai.types import HarmCategory, HarmBlockThreshold
+            safety_settings = {
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            }
+
+            import time
+            start_gemini = time.time()
             response = await model.generate_content_async(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens,
+                    max_output_tokens=8192,
                     temperature=0.1,
+                    response_mime_type="application/json",
                 ),
+                safety_settings=safety_settings,
             )
-            content = response.text.strip()
-            logger.info(f"Gemini response received, length={len(content)}")
+            latency_ms = int((time.time() - start_gemini) * 1000)
+            
+            # Extract usage metadata
+            try:
+                usage = response.usage_metadata
+                prompt_tokens = usage.prompt_token_count if usage else 0
+                out_tokens = usage.candidates_token_count if usage else 0
+            except Exception:
+                prompt_tokens = 0
+                out_tokens = 0
+
+            logger.info(
+                f"Gemini call complete | latency={latency_ms}ms | "
+                f"prompt_tokens={prompt_tokens} | output_tokens={out_tokens} | "
+            )
+            logger.info(f"Gemini candidate count: {len(response.candidates)}")
+            if response.candidates:
+                candidate = response.candidates[0]
+                reason = candidate.finish_reason
+                logger.info(f"Gemini finish reason: {reason}")
+                
+                if reason == 3 or str(reason) == "FinishReason.SAFETY":
+                    logger.error("Candidate blocked by SAFETY filters!")
+                    if candidate.safety_ratings:
+                        for rating in candidate.safety_ratings:
+                            logger.error(f"Safety Rating -> Category: {rating.category}, Probability: {rating.probability}, Blocked: {rating.blocked}")
+                
+            try:
+                content = response.text.strip()
+                logger.info(f"Gemini response length: {len(content)}")
+            except ValueError as ve:
+                logger.error(f"Failed to read response.text. Blocked? {ve}")
+                content = ""
+            
             logger.info(f"Raw Gemini response (first 500): {content[:500]}")
 
             # Remove markdown wrappers
@@ -347,19 +396,46 @@ async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500,
             try:
                 parsed = json.loads(cleaned_response)
             except Exception as e:
-                logger.exception("JSON parse failed")
-                raise ValueError(
-                    f"JSON Parse Failed.\n"
-                    f"Exception: {type(e).__name__}: {e}\n"
-                    f"Raw response length: {len(content)}\n"
-                    f"Cleaned response (first 500 chars): {cleaned_response[:500]}"
-                )
+                logger.warning(f"Initial JSON parse failed. Attempting auto-repair. Error: {str(e)}")
+                try:
+                    import json_repair
+                    repaired = json_repair.repair_json(cleaned_response, return_objects=True)
+                    if isinstance(repaired, dict):
+                        parsed = repaired
+                    else:
+                        raise ValueError("Repaired output is not a JSON object")
+                except Exception as repair_e:
+                    logger.exception("JSON auto-repair failed")
+                    raise GeminiJSONError(
+                        f"INVALID_GEMINI_JSON\n"
+                        f"Exception: {type(e).__name__}: {e}\n"
+                        f"Repair Exception: {repair_e}\n"
+                        f"Raw response length: {len(content)}\n"
+                        f"Cleaned response (first 500 chars): {cleaned_response[:500]}",
+                        raw_response=content,
+                        cleaned_response=cleaned_response,
+                        traceback_str=str(repair_e),
+                        exception_type=type(repair_e).__name__
+                    )
 
             if not isinstance(parsed, dict):
-                raise ValueError("Gemini did not return a JSON object")
+                raise GeminiJSONError(
+                    "Gemini did not return a JSON object",
+                    raw_response=content,
+                    cleaned_response=cleaned_response,
+                    traceback_str="",
+                    exception_type="ValueError"
+                )
 
             return parsed
 
+        except GeminiJSONError as ge:
+            if attempt < _retries - 1:
+                logger.warning(f"Gemini JSON invalid. Retrying ({attempt+1}/{_retries}) with stricter prompt.")
+                prompt += "\n\nCRITICAL: You must return ONLY valid JSON. Do not return incomplete or truncated strings."
+                continue
+            logger.error("Gemini JSON invalid after all retries, bubbling up.")
+            raise ge
         except Exception as e:
             last_exception = e
             logger.error(f"CALL_GEMINI_FAILED (attempt {attempt + 1}/{_retries}): {type(e).__name__}: {e}")
@@ -559,6 +635,24 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         exception_type = None
         raw_gemini_response = None
         cleaned_gemini_response = None
+        
+    except GeminiJSONError as e:
+        import traceback as tb
+        error_msg = "Gemini JSON format invalid"
+        logger.error(f"=== PARSE_AGENT JSON ERROR === {str(e)}")
+        state["errors"] = state.get("errors", []) + [error_msg]
+        state["parsed"] = {}
+        state["parse_confidence"] = 0.0
+        state["layout_type"] = state.get("layout_type", "unknown")
+        state["resume_language"] = state.get("resume_language", "en")
+        state["ai_content_probability"] = state.get("ai_content_probability", 0.0)
+        state["experience_months_total"] = 0
+        status = "failed"
+
+        traceback_str = e.traceback_str
+        exception_type = e.exception_type
+        raw_gemini_response = e.raw_response
+        cleaned_gemini_response = e.cleaned_response
 
     except Exception as e:
         import traceback as tb

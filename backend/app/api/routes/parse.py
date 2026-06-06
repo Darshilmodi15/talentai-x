@@ -340,6 +340,16 @@ async def get_job_status(
             }
         )
 
+    if job.status == ProcessingStatus.FAILED and job.error_message == "Gemini JSON format invalid":
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error_code": "INVALID_GEMINI_JSON",
+                "message": "AI response format was invalid."
+            }
+        )
+
     # Get candidate if completed
     candidate_id = None
     parse_confidence = None

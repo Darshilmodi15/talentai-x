@@ -28,7 +28,7 @@ async def parse_node(state: PipelineState) -> PipelineState:
         has_data = bool(state.get("parsed"))
 
         # FATAL ERROR CHECK: Break orchestrator loop immediately on Quota limits or Model Not Found
-        if any(fatal in err for err in state.get("errors", []) for fatal in ["Gemini quota exceeded", "Gemini model not found"]):
+        if any(fatal in err for err in state.get("errors", []) for fatal in ["Gemini quota exceeded", "Gemini model not found", "Gemini JSON format invalid"]):
             logger.error(f"parse_node: Fatal API error on attempt {attempt + 1}. Breaking retry storm.")
             state["overall_status"] = "failed"
             break
