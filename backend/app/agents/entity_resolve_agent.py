@@ -215,6 +215,9 @@ def compute_bio_similarity(resume_summary: Optional[str], platform_bio: Optional
         return 0.0
     try:
         import google.generativeai as genai
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("GEMINI CALL: entity_resolve_agent.py | compute_bio_similarity | job_id=unknown")
         genai.configure(api_key=settings.GEMINI_API_KEY)
         
         # Batch embed both texts

@@ -260,85 +260,70 @@ def get_chroma_client():
 
 
 
-
-
-def semantic_skill_lookup(skill: str) -> Optional[str]:
+async def semantic_skill_lookup_batch(skills: list[str], state: PipelineState) -> dict[str, Optional[str]]:
     """
-    Embed the skill and find closest match in skill taxonomy collection.
-    Returns canonical name if similarity > 0.80, else None.
+    Batch embed skills and find closest match in skill taxonomy collection.
+    Returns mapping of raw_skill to canonical name if similarity > 0.80, else None.
     """
+    if not skills:
+        return {}
     try:
         client = get_chroma_client()
         collection = client.get_collection("skill_taxonomy")
         import google.generativeai as genai
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        res = genai.embed_content(
-            model=settings.EMBEDDING_MODEL,
-            content=skill,
-            task_type="retrieval_query",
-        )
-        embedding = res['embedding']
+        import logging
+        import asyncio
+        logger = logging.getLogger(__name__)
+        job_id = state.get("job_id", "unknown")
+        
+        BACKOFFS = [5, 15, 30]
+        res = None
+        for attempt in range(4):
+            try:
+                state["gemini_api_calls"] = state.get("gemini_api_calls", 0) + 1
+                logger.info(f"Calling Gemini | agent=normalize_agent | job_id={job_id} | attempt={attempt+1}")
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                res = genai.embed_content(
+                    model=settings.EMBEDDING_MODEL,
+                    content=skills,
+                    task_type="retrieval_query",
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                is_quota = any(pattern in error_str for pattern in ["too many requests", "resource exhausted", "quota exceeded", "rate limit", "generaterequestsperday"])
+                if is_quota and attempt < len(BACKOFFS):
+                    logger.warning(f"Gemini quota/rate-limit error. Retrying in {BACKOFFS[attempt]}s...")
+                    await asyncio.sleep(BACKOFFS[attempt])
+                    continue
+                else:
+                    return {s: None for s in skills}
+                    
+        if not res or 'embedding' not in res:
+            return {s: None for s in skills}
+
+        embeddings = res['embedding']
         results = collection.query(
-            query_embeddings=[embedding],  # type: ignore
+            query_embeddings=embeddings,
             n_results=1,
         )
-        distances = results.get("distances")
-        if distances and len(distances) > 0 and distances[0] and len(distances[0]) > 0 and distances[0][0] < 0.25:
-            # ChromaDB uses L2 distance; < 0.25 ≈ cosine sim > 0.80
-            metadatas = results.get("metadatas")
-            if metadatas and len(metadatas) > 0 and metadatas[0] and len(metadatas[0]) > 0:
-                meta = metadatas[0][0]
-                if isinstance(meta, dict):
-                    name = meta.get("canonical_name")
-                    return str(name) if name is not None else None
-        return None
+        
+        mapping = {}
+        for i, skill in enumerate(skills):
+            distances = results.get("distances")
+            mapping[skill] = None
+            if distances and i < len(distances) and distances[i] and len(distances[i]) > 0:
+                if distances[i][0] < 0.20:
+                    metadatas = results.get("metadatas")
+                    if metadatas and i < len(metadatas) and metadatas[i] and len(metadatas[i]) > 0:
+                        meta = metadatas[i][0]
+                        if isinstance(meta, dict):
+                            name = meta.get("canonical_name")
+                            mapping[skill] = str(name) if name is not None else None
+                            
+        return mapping
     except Exception:
-        return None
-
-
-# ──────────────────────────────────────────────────────────────────
-# Main Normalization Logic
-# ──────────────────────────────────────────────────────────────────
-
-def normalize_single_skill(
-    raw_skill: str,
-    experience: list[dict],
-    taxonomy_set: set[str],
-) -> tuple[SkillEntry, bool]:
-    """
-    Returns (SkillEntry, is_emerging).
-    is_emerging = True if skill not found anywhere in taxonomy.
-    """
-    raw_lower = raw_skill.lower().strip()
-
-    # 1. Direct synonym lookup
-    canonical = SYNONYMS.get(raw_lower)
-
-    # 2. Fuzzy Jaro-Winkler
-    if not canonical:
-        canonical = fuzzy_match_synonym(raw_skill)
-
-    # 3. ChromaDB semantic fallback
-    if not canonical:
-        canonical = semantic_skill_lookup(raw_skill)
-
-    is_emerging = canonical is None
-    if not canonical:
-        canonical = raw_lower  # use raw as canonical, flag for review
-
-    years = estimate_years(canonical, experience)
-    proficiency = years_to_proficiency(years)
-
-    entry = SkillEntry(
-        raw=raw_skill,
-        canonical=canonical,
-        category=categorize_skill(canonical),
-        proficiency=proficiency,
-        years=years,
-        inferred=False,
-        source="resume",
-    )
-    return entry, is_emerging
+        return {s: None for s in skills}
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -364,12 +349,52 @@ async def normalize_agent(state: PipelineState) -> PipelineState:
         canonical_entries: list[SkillEntry] = []
         emerging: list[str] = []
         seen_canonicals: set[str] = set()
-
-        # Normalize each raw skill
+        
+        # Pre-process: Find exact and fuzzy matches, gather unknown skills
+        unknown_skills = []
+        skill_metadata = {}
         for raw_skill in raw_skills:
             if not raw_skill or not raw_skill.strip():
                 continue
-            entry, is_emerging = normalize_single_skill(raw_skill, experience, seen_canonicals)
+            
+            raw_lower = raw_skill.lower().strip()
+            canonical = SYNONYMS.get(raw_lower)
+            if not canonical:
+                canonical = fuzzy_match_synonym(raw_skill)
+                
+            skill_metadata[raw_skill] = {
+                "raw_lower": raw_lower,
+                "canonical": canonical,
+                "years": estimate_years(canonical or raw_lower, experience),
+            }
+            if not canonical:
+                unknown_skills.append(raw_skill)
+                
+        # Batch Semantic Lookup for unknowns
+        semantic_mapping = await semantic_skill_lookup_batch(unknown_skills, state)
+        
+        # Build entries
+        for raw_skill in skill_metadata:
+            meta = skill_metadata[raw_skill]
+            canonical = meta["canonical"]
+            if not canonical:
+                canonical = semantic_mapping.get(raw_skill)
+                
+            is_emerging = canonical is None
+            if not canonical:
+                canonical = meta["raw_lower"]
+                
+            proficiency = years_to_proficiency(meta["years"])
+            entry = SkillEntry(
+                raw=raw_skill,
+                canonical=canonical,
+                category=categorize_skill(canonical),
+                proficiency=proficiency,
+                years=meta["years"],
+                inferred=False,
+                source="resume",
+            )
+            
             if entry["canonical"] not in seen_canonicals:
                 canonical_entries.append(entry)
                 seen_canonicals.add(entry["canonical"])

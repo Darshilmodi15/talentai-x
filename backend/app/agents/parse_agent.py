@@ -39,7 +39,7 @@ QUOTA_ERROR_PATTERNS = [
 # PROMPTS — tightly scoped per extraction task
 # ──────────────────────────────────────────────────────────────────
 
-PROMPT_BASIC_INFO = """Extract ONLY basic personal information from this resume text.
+PROMPT_EXTRACT_ALL = """Extract ALL structured information from this resume text.
 Return ONLY valid JSON, no explanation, no markdown.
 
 Schema:
@@ -52,20 +52,7 @@ Schema:
   "linkedin_url": string or null,
   "github_url": string or null,
   "portfolio_url": string or null,
-  "other_urls": [string]
-}
-
-If a field is not present, use null. Never invent data.
-
-Resume text:
-{text}"""
-
-
-PROMPT_EXPERIENCE = """Extract ONLY work experience from this resume text.
-Return ONLY valid JSON, no explanation, no markdown.
-
-Schema:
-{
+  "other_urls": [string],
   "experience": [
     {
       "company": string or null,
@@ -77,18 +64,7 @@ Schema:
       "skills_mentioned": [string]
     }
   ],
-  "experience_months_total": integer
-}
-
-Resume text:
-{text}"""
-
-
-PROMPT_EDUCATION = """Extract ONLY education from this resume text.
-Return ONLY valid JSON, no explanation, no markdown.
-
-Schema:
-{
+  "experience_months_total": integer,
   "education": [
     {
       "institution": string or null,
@@ -97,18 +73,7 @@ Schema:
       "year": integer or null,
       "gpa": float or null
     }
-  ]
-}
-
-Resume text:
-{text}"""
-
-
-PROMPT_SKILLS_CERTS = """Extract ONLY skills, certifications, and projects from this resume text.
-Return ONLY valid JSON, no explanation, no markdown.
-
-Schema:
-{
+  ],
   "skills": [string],
   "certifications": [
     {"name": string, "issuer": string or null, "year": integer or null}
@@ -118,6 +83,8 @@ Schema:
   ],
   "publications": [string]
 }
+
+If a field is not present, use null. Never invent data.
 
 Resume text:
 {text}"""
@@ -312,7 +279,7 @@ def _is_quota_error(exception: Exception) -> bool:
     error_str = str(exception).lower()
     return any(pattern in error_str for pattern in QUOTA_ERROR_PATTERNS)
 
-async def call_gemini(prompt: str, max_tokens: int = 1500, _retries: int = 3) -> dict:
+async def call_gemini(prompt: str, state: dict, max_tokens: int = 2500, _retries: int = 4) -> dict:
     """Single async Gemini call with exponential backoff for 429 errors.
     Returns parsed JSON or raises GeminiQuotaError / GeminiCallError."""
     import traceback
@@ -320,12 +287,16 @@ async def call_gemini(prompt: str, max_tokens: int = 1500, _retries: int = 3) ->
     cleaned_response = ""
     last_exception = None
 
+    job_id = state.get("job_id", "unknown")
+    BACKOFFS = [5, 15, 30]
+
     for attempt in range(_retries):
         try:
+            state["gemini_api_calls"] = state.get("gemini_api_calls", 0) + 1
             genai.configure(api_key=settings.GEMINI_API_KEY)
             model = genai.GenerativeModel(settings.GEMINI_MODEL)
 
-            logger.info(f"Gemini call attempt {attempt + 1}/{_retries}, prompt length={len(prompt)}")
+            logger.info(f"Calling Gemini | agent=parse_agent | job_id={job_id} | attempt={attempt+1}/{_retries}")
 
             response = await model.generate_content_async(
                 prompt,
@@ -380,9 +351,9 @@ async def call_gemini(prompt: str, max_tokens: int = 1500, _retries: int = 3) ->
 
             # If it's a quota/rate-limit error, retry with exponential backoff
             if _is_quota_error(e):
-                if attempt < _retries - 1:
-                    backoff = (2 ** attempt) + random.uniform(0, 1)
-                    logger.warning(f"Gemini quota/rate-limit error. Retrying in {backoff:.1f}s...")
+                if attempt < len(BACKOFFS):
+                    backoff = BACKOFFS[attempt]
+                    logger.warning(f"Gemini quota/rate-limit error. Retrying in {backoff}s...")
                     await asyncio.sleep(backoff)
                     continue
                 else:
@@ -418,77 +389,6 @@ async def call_gemini(prompt: str, max_tokens: int = 1500, _retries: int = 3) ->
     )
 
 
-async def extract_all_parallel(raw_text: str) -> tuple[dict, dict, dict, dict]:
-    """Run all 4 extraction prompts concurrently.
-    Uses return_exceptions=True so one failed prompt doesn't kill the others.
-
-    IMPORTANT: If ALL 4 calls fail, or ANY fail with a quota error,
-    this function raises an exception instead of returning empty dicts.
-    """
-    # Truncate to avoid context window issues
-    text_chunk = raw_text[:6000]
-    logger.info(f"Starting parallel Gemini extraction, text chunk length={len(text_chunk)}")
-
-    results = await asyncio.gather(
-        call_gemini(PROMPT_BASIC_INFO.replace("{text}", text_chunk), max_tokens=800),
-        call_gemini(PROMPT_EXPERIENCE.replace("{text}", text_chunk), max_tokens=1500),
-        call_gemini(PROMPT_EDUCATION.replace("{text}", text_chunk), max_tokens=600),
-        call_gemini(PROMPT_SKILLS_CERTS.replace("{text}", text_chunk), max_tokens=1000),
-        return_exceptions=True,
-    )
-
-    labels = ["basic_info", "experience", "education", "skills_certs"]
-    processed = []
-    failures = []
-    quota_errors = []
-
-    for label, result in zip(labels, results):
-        if isinstance(result, GeminiQuotaError):
-            logger.error(
-                f"QUOTA ERROR in '{label}': {type(result).__name__}: {result}"
-            )
-            quota_errors.append((label, result))
-            failures.append((label, result))
-            processed.append({})
-        elif isinstance(result, Exception):
-            logger.error(
-                f"Gemini extraction '{label}' failed: "
-                f"{type(result).__name__}: {result}"
-            )
-            failures.append((label, result))
-            processed.append({})
-        else:
-            assert isinstance(result, dict)
-            logger.info(f"Gemini extraction '{label}' succeeded: {list(result.keys())}")
-            processed.append(result)
-
-    # If ANY call hit a quota error, raise immediately — don't return partial empty data
-    if quota_errors:
-        label, err = quota_errors[0]
-        raise GeminiQuotaError(
-            f"Gemini quota/rate-limit error in '{label}' extraction. "
-            f"{len(quota_errors)}/{len(labels)} calls hit quota limits. "
-            f"Original error: {err}",
-            raw_response=getattr(err, 'raw_response', ''),
-            cleaned_response=getattr(err, 'cleaned_response', ''),
-            traceback_str=getattr(err, 'traceback_str', ''),
-            exception_type=getattr(err, 'exception_type', 'GeminiQuotaError'),
-        )
-
-    # If ALL 4 calls failed (non-quota), raise so parse_agent marks as failed
-    if len(failures) == len(labels):
-        label, err = failures[0]
-        raise GeminiCallError(
-            f"All {len(labels)} Gemini extraction calls failed. "
-            f"First error ({label}): {type(err).__name__}: {err}",
-            raw_response=getattr(err, 'raw_response', ''),
-            cleaned_response=getattr(err, 'cleaned_response', ''),
-            traceback_str=getattr(err, 'traceback_str', ''),
-            exception_type=getattr(err, 'exception_type', type(err).__name__),
-        )
-
-    logger.info(f"Extraction results: {len(labels) - len(failures)}/{len(labels)} succeeded")
-    return processed[0], processed[1], processed[2], processed[3]
 
 
 def merge_extractions(basic: dict, experience: dict, education: dict, skills: dict) -> dict:
@@ -569,17 +469,15 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         # Step 4: Detect AI content
         state["ai_content_probability"] = detect_ai_content(raw_text)
 
-        # Step 5: Parallel LLM extraction (with one retry)
-        basic, experience, education, skills = await extract_all_parallel(raw_text)
+        # Step 5: Single LLM extraction (with one retry)
+        parsed = await extract_all_info(raw_text, state)
 
         # Retry if basic info is completely empty (non-quota failures only)
-        if not basic and retry_count < 1:
+        if not parsed.get("name") and retry_count < 1:
             retry_count += 1
             logger.warning("Basic info empty, retrying extraction...")
-            basic, experience, education, skills = await extract_all_parallel(raw_text)
+            parsed = await extract_all_info(raw_text, state)
 
-        # Step 6: Merge
-        parsed = merge_extractions(basic, experience, education, skills)
         logger.info(
             f"Merged parse result: name={parsed.get('name')}, "
             f"email={parsed.get('email')}, "

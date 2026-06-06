@@ -131,6 +131,9 @@ _model = None
 
 def embed_text(text: str) -> list[float]:
     import google.generativeai as genai
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("GEMINI CALL: match_agent.py | embed_text | job_id=unknown")
     genai.configure(api_key=settings.GEMINI_API_KEY)
     res = genai.embed_content(
         model=settings.EMBEDDING_MODEL,
@@ -155,6 +158,9 @@ def cosine_sim(a: list[float], b: list[float]) -> float:
 
 async def parse_job_description(jd: str) -> dict:
     import google.generativeai as genai
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("GEMINI CALL: match_agent.py | parse_job_description | job_id=unknown")
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
     try:
@@ -353,6 +359,9 @@ async def run_cot_match(
     experience: list[dict],
 ) -> str:
     import google.generativeai as genai
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("GEMINI CALL: match_agent.py | run_cot_match | job_id=unknown")
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
 
@@ -389,6 +398,9 @@ async def generate_interview_questions(
     recommendation: str,
 ) -> dict:
     import google.generativeai as genai
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("GEMINI CALL: match_agent.py | generate_interview_questions | job_id=unknown")
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
     matched_names = [m.get("canonical", "") if isinstance(m, dict) else getattr(m, "candidate_skill", "") for m in matched[:5]]
@@ -418,6 +430,9 @@ async def generate_upskilling(gaps: list[str]) -> dict:
     if not gaps:
         return {}
     import google.generativeai as genai
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("GEMINI CALL: match_agent.py | generate_upskilling | job_id=unknown")
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_MODEL)
     try:

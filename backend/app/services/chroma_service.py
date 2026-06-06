@@ -75,12 +75,33 @@ async def embed_candidate_profile(candidate_id: str, skills: list[dict], summary
         skill_text = " ".join(s.get("canonical", "") for s in skills)
         combined_text = f"{summary} {skill_text}".strip()[:2000]
 
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        res = genai.embed_content(
-            model=settings.EMBEDDING_MODEL,
-            content=combined_text,
-            task_type="retrieval_document",
-        )
+        BACKOFFS = [5, 15, 30]
+        res = None
+        for attempt in range(4):
+            try:
+                logger.info(f"GEMINI CALL: chroma_service.py | embed_candidate_profile | job_id=unknown | attempt={attempt+1}")
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                res = genai.embed_content(
+                    model=settings.EMBEDDING_MODEL,
+                    content=combined_text,
+                    task_type="retrieval_document",
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                is_quota = any(pattern in error_str for pattern in ["too many requests", "resource exhausted", "quota exceeded", "rate limit", "generaterequestsperday"])
+                if is_quota and attempt < len(BACKOFFS):
+                    import asyncio
+                    logger.warning(f"Gemini quota/rate-limit error. Retrying in {BACKOFFS[attempt]}s...")
+                    await asyncio.sleep(BACKOFFS[attempt])
+                    continue
+                else:
+                    logger.error(f"Failed to embed candidate profile: {e}")
+                    return
+
+        if not res or 'embedding' not in res:
+            return
+            
         embedding = res['embedding']
 
         collection.upsert(
@@ -107,12 +128,33 @@ async def embed_skill_in_taxonomy(skill_id: str, skill_name: str, category: str,
 
         text = f"{skill_name} {category} {parent}".strip()
         
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        res = genai.embed_content(
-            model=settings.EMBEDDING_MODEL,
-            content=text,
-            task_type="retrieval_document",
-        )
+        BACKOFFS = [5, 15, 30]
+        res = None
+        for attempt in range(4):
+            try:
+                logger.info(f"GEMINI CALL: chroma_service.py | add_skills_batch | job_id=unknown | attempt={attempt+1}")
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                res = genai.embed_content(
+                    model=settings.EMBEDDING_MODEL,
+                    content=text,
+                    task_type="retrieval_document",
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                is_quota = any(pattern in error_str for pattern in ["too many requests", "resource exhausted", "quota exceeded", "rate limit", "generaterequestsperday"])
+                if is_quota and attempt < len(BACKOFFS):
+                    import asyncio
+                    logger.warning(f"Gemini quota/rate-limit error. Retrying in {BACKOFFS[attempt]}s...")
+                    await asyncio.sleep(BACKOFFS[attempt])
+                    continue
+                else:
+                    logger.error(f"Failed to embed skill: {e}")
+                    return
+                    
+        if not res or 'embedding' not in res:
+            return
+            
         embedding = res['embedding']
 
         collection.upsert(
