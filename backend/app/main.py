@@ -83,6 +83,25 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
 
+# Global 500 Error Handler
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import logging
+
+logger = logging.getLogger(__name__)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception(f"Unhandled Server Error on {request.method} {request.url}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error_code": "INTERNAL_SERVER_ERROR",
+            "message": "An unexpected server error occurred. Please try again later."
+        }
+    )
+
 # Routers
 app.include_router(parse.router,       prefix="/api/v1", tags=["Resume Parsing"])
 app.include_router(match.router,       prefix="/api/v1", tags=["Matching"])

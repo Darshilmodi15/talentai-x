@@ -13,6 +13,7 @@ type JobState = {
   parseConfidence?: number
   skillsFound?: number
   error?: string
+  file?: File
 }
 
 export default function UploadPage() {
@@ -43,11 +44,19 @@ export default function UploadPage() {
           if (status.status === 'completed') {
             toast.success(`"${status.file_name}" parsed successfully`)
           } else if (status.status === 'failed') {
-            toast.error(`Failed to parse "${status.file_name}"`)
+            toast.error(status.error_message || `Failed to parse "${status.file_name}"`)
           }
         }
-      } catch {
+      } catch (err: any) {
         clearInterval(interval)
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.jobId === jobId
+              ? { ...j, status: 'failed', error: err.message || 'Failed to communicate with server' }
+              : j
+          )
+        )
+        toast.error(err.message || 'Failed to communicate with server')
       }
     }, 2000)
   }, [])
@@ -61,6 +70,7 @@ export default function UploadPage() {
           jobId: result.job_id,
           fileName: file.name,
           status: 'queued',
+          file: file,
         }
         setJobs((prev) => [newJob, ...prev])
         toast.success(`"${file.name}" queued for processing`)
@@ -71,6 +81,12 @@ export default function UploadPage() {
     }
     setUploading(false)
   }, [pollJob])
+
+  const retryJob = useCallback((job: JobState) => {
+    if (!job.file) return
+    setJobs((prev) => prev.filter((j) => j.jobId !== job.jobId))
+    onDrop([job.file])
+  }, [onDrop])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -89,10 +105,16 @@ export default function UploadPage() {
     return <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
   }
 
-  const statusColor = (status: string) => {
-    if (status === 'completed') return 'bg-green-50 border-green-200'
-    if (status === 'failed') return 'bg-red-50 border-red-200'
-    if (status === 'partial') return 'bg-amber-50 border-amber-200'
+  const statusColor = (job: JobState) => {
+    if (job.status === 'completed') return 'bg-green-50 border-green-200'
+    if (job.status === 'partial') return 'bg-amber-50 border-amber-200'
+    if (job.status === 'failed') {
+      // Styled warning card for quota/server errors instead of red
+      if (job.error?.includes('temporarily unavailable') || job.error?.includes('Server error')) {
+        return 'bg-amber-50 border-amber-300'
+      }
+      return 'bg-red-50 border-red-200'
+    }
     return 'bg-indigo-50 border-indigo-200'
   }
 
@@ -133,7 +155,7 @@ export default function UploadPage() {
             {jobs.map((job) => (
               <div
                 key={job.jobId}
-                className={`border rounded-xl p-4 flex items-center justify-between ${statusColor(job.status)}`}
+                className={`border rounded-xl p-4 flex items-center justify-between ${statusColor(job)}`}
               >
                 <div className="flex items-center gap-3">
                   <FileText className="w-5 h-5 text-gray-500" />
@@ -144,11 +166,23 @@ export default function UploadPage() {
                       {job.parseConfidence !== undefined && ` · Confidence: ${Math.round(job.parseConfidence * 100)}%`}
                       {job.skillsFound !== undefined && ` · ${job.skillsFound} skills`}
                     </p>
-                    {job.error && <p className="text-xs text-red-600 mt-1">{job.error}</p>}
+                    {job.error && (
+                      <p className={`text-xs mt-1 font-medium ${job.error.includes('temporarily unavailable') ? 'text-amber-700' : 'text-red-600'}`}>
+                        {job.error}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   {statusIcon(job.status)}
+                  {job.status === 'failed' && job.file && (
+                    <button
+                      onClick={() => retryJob(job)}
+                      className="px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-md shadow-sm hover:bg-gray-50 text-gray-700 transition-colors"
+                    >
+                      Try Again
+                    </button>
+                  )}
                   {job.status === 'completed' && job.candidateId && (
                     <button
                       onClick={() => navigate(`/candidates/${job.candidateId}`)}

@@ -613,9 +613,9 @@ async def parse_agent(state: PipelineState) -> PipelineState:
 
     except GeminiQuotaError as e:
         import traceback as tb
-        error_msg = f"GEMINI QUOTA EXCEEDED: {str(e)}"
-        logger.error(f"=== PARSE_AGENT QUOTA ERROR === {error_msg}")
-        state["errors"] = state.get("errors", []) + [f"parse_agent: {error_msg}"]
+        error_msg = "Gemini quota exceeded"
+        logger.error(f"=== PARSE_AGENT QUOTA ERROR === {str(e)}")
+        state["errors"] = state.get("errors", []) + [error_msg]
         state["parsed"] = {}
         state["parse_confidence"] = 0.0
         state["layout_type"] = state.get("layout_type", "unknown")
@@ -624,10 +624,11 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         state["experience_months_total"] = 0
         status = "failed"
 
-        traceback_str = getattr(e, "traceback_str", tb.format_exc())
-        exception_type = getattr(e, "exception_type", type(e).__name__)
-        raw_gemini_response = getattr(e, "raw_response", None)
-        cleaned_gemini_response = getattr(e, "cleaned_response", None)
+        # Do NOT log these to the state traces to avoid leaking to frontend
+        traceback_str = None
+        exception_type = None
+        raw_gemini_response = None
+        cleaned_gemini_response = None
 
     except Exception as e:
         import traceback as tb

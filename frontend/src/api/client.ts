@@ -12,8 +12,19 @@ export const api = axios.create({
 
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
-  (error: AxiosError<{ detail?: string }>) => {
-    const message = (error.response?.data as { detail?: string })?.detail || 'An error occurred'
+  (error: AxiosError<{ message?: string; detail?: string }>) => {
+    let message = 'An error occurred'
+
+    if (!error.response) {
+      message = 'Unable to connect to server'
+    } else if (error.response.status === 429) {
+      message = error.response.data?.message || 'Resume analysis is temporarily unavailable. Please try again later.'
+    } else if (error.response.status >= 500) {
+      message = 'Server error'
+    } else {
+      message = error.response.data?.message || error.response.data?.detail || message
+    }
+
     return Promise.reject(new Error(message))
   }
 )

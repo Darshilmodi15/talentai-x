@@ -100,7 +100,10 @@ async def process_resume_task(
             if overall_status == "failed":
                 # ── FAILED: Do NOT create a candidate with empty data ──
                 errors = state.get("errors", [])
-                error_summary = "; ".join(errors) if errors else "Parse pipeline failed — no data extracted"
+                if "Gemini quota exceeded" in errors:
+                    error_summary = "Gemini quota exceeded"
+                else:
+                    error_summary = "; ".join(errors) if errors else "Parse pipeline failed — no data extracted"
 
                 job.status = ProcessingStatus.FAILED
                 job.error_message = error_summary
@@ -316,6 +319,16 @@ async def get_job_status(
     job = await db.get(ParseJob, job_uuid)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status == ProcessingStatus.FAILED and job.error_message == "Gemini quota exceeded":
+        return JSONResponse(
+            status_code=429,
+            content={
+                "success": False,
+                "error_code": "GEMINI_QUOTA_EXCEEDED",
+                "message": "Resume parsing is temporarily unavailable. Please try again later."
+            }
+        )
 
     # Get candidate if completed
     candidate_id = None
