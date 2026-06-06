@@ -159,6 +159,7 @@ async def match_candidate(
     logger.info("STEP 1: route entered")
 
     # Load candidate
+    logger.info("Loading candidate")
     try:
         cand_uuid = uuid.UUID(body.candidate_id)
         candidate = await db.get(Candidate, cand_uuid)
@@ -212,6 +213,7 @@ async def match_candidate(
     # Persist result
     match_id = None
     if body.save_result:
+        logger.info("Creating MatchResult")
         try:
             # Save or find job
             job = Job(
@@ -258,6 +260,7 @@ async def match_candidate(
 
         # Add to HITL queue if needed
         if state.get("hitl_required"):
+            logger.info("Creating HITL record")
             if not match_result or not match_result.id:
                 logger.error("Skipping HITL creation because match_result is missing")
                 from fastapi.responses import JSONResponse

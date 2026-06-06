@@ -13,6 +13,9 @@ import json
 import time
 from datetime import datetime, timezone
 from typing import Optional, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.core.pipeline_state import PipelineState, AgentTrace, MatchedSkill
 from app.core.config import settings
@@ -486,8 +489,12 @@ async def match_agent(
         # 2. Embed both sides for semantic score
         candidate_text = " ".join(s["canonical"] for s in all_skills)
         jd_text = " ".join(required + nice)
+        
+        logger.info("Generating embeddings")
         cand_emb = embed_text(candidate_text)
         jd_emb = embed_text(jd_text)
+        
+        logger.info("Calculating similarity")
         semantic_score = cosine_sim(cand_emb, jd_emb)
 
         # 3. Required skill matching
@@ -600,6 +607,7 @@ async def match_agent(
         state["hitl_triggers"] = hitl_triggers
 
     except Exception as e:
+        logger.exception("Match pipeline failed")
         error_msg = str(e)
         state["errors"] = state.get("errors", []) + [f"match_agent: {error_msg}"]
         state["match_score"] = 0.0
