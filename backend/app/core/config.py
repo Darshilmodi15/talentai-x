@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 from functools import lru_cache
 from typing import List
 
@@ -19,6 +19,29 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "https://talentai-x.vercel.app",
     ]
+
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    parsed = json.loads(v)
+                    if len(parsed) == 1 and "," in parsed[0]:
+                        return [x.strip().rstrip("/") for x in parsed[0].split(",")]
+                    return [x.rstrip("/") for x in parsed]
+                except Exception:
+                    # fallback to string split
+                    v = v.strip("[]\"'")
+            return [x.strip().rstrip("/") for x in v.split(",")]
+        elif isinstance(v, list):
+            # If parsed as a list of 1 string containing commas
+            if len(v) == 1 and isinstance(v[0], str) and "," in v[0]:
+                return [x.strip().rstrip("/") for x in v[0].split(",")]
+            # Strip trailing slashes just in case
+            return [x.rstrip("/") if isinstance(x, str) else x for x in v]
+        return v
 
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://talentai:talentai_secret@localhost:5433/talentai_db"

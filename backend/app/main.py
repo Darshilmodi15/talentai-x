@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
 
     # Startup
     print("🚀 TalentAI-X starting up...")
+    print(f"🌍 CORS Allowed Origins: {settings.ALLOWED_ORIGINS}")
     await init_db()
     print("✅ Database initialized")
     
