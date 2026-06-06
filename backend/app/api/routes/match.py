@@ -246,7 +246,7 @@ async def match_candidate(
                 status=match_status,
             )
             db.add(match_result)
-            await db.flush()  # Ensure match_result.id is generated before HITL creation
+            await db.commit()  # Ensure MatchResult is committed before HITL creation
             match_id = str(match_result.id)
         except Exception as e:
             logger.error(f"Error persisting match result:\n{traceback.format_exc()}")
@@ -256,28 +256,35 @@ async def match_candidate(
 
         # Add to HITL queue if needed
         if state.get("hitl_required"):
-            logger.info(
-                f"Attempting HITL creation | candidate_id={cand_uuid} | "
-                f"match_result_id={match_result.id} | triggers={state.get('hitl_triggers')}"
-            )
+            if not match_result or not match_result.id:
+                logger.error("Skipping HITL creation because match_result is missing")
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "success": False,
+                        "error_code": "MATCHING_FAILED",
+                        "message": "Unable to generate candidate match."
+                    }
+                )
+
+            logger.info(f"MatchResult created: {match_result.id}")
+            logger.info(f"Creating HITL queue for match_result_id={match_result.id}")
             
-            if match_result.id is None:
-                logger.error("Cannot create HITL queue entry without match_result_id")
-            else:
-                try:
-                    from datetime import timezone # Fix for the NameError
-                    hitl = HITLReviewItem(
-                        match_result_id=match_result.id,
-                        trigger_reason=", ".join(state.get("hitl_triggers", [])),
-                        priority="high" if state.get("bias_flagged") else "normal",
-                        expires_at=datetime.now(timezone.utc) + timedelta(hours=48),
-                    )
-                    db.add(hitl)
-                    await db.flush()
-                    logger.info("HITL creation success")
-                except Exception as e:
-                    logger.exception(f"Failed to create HITL queue record:\n{traceback.format_exc()}")
-                    # Continue returning match response
+            try:
+                from datetime import timezone
+                hitl = HITLReviewItem(
+                    match_result_id=match_result.id,
+                    trigger_reason=", ".join(state.get("hitl_triggers", [])),
+                    priority="high" if state.get("bias_flagged") else "normal",
+                    expires_at=datetime.now(timezone.utc) + timedelta(hours=48),
+                )
+                db.add(hitl)
+                await db.commit()
+                logger.info("HITL creation success")
+            except Exception as e:
+                logger.exception(f"Failed to create HITL queue record:\n{traceback.format_exc()}")
+                # Continue returning match response
 
         try:
             await db.commit()
