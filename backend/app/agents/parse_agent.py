@@ -274,10 +274,20 @@ class GeminiQuotaError(GeminiCallError):
     pass
 
 
+class GeminiNotFoundError(GeminiCallError):
+    """Raised for 404 Model Not Found errors."""
+    pass
+
+
 def _is_quota_error(exception: Exception) -> bool:
     """Check if an exception is a Gemini quota/rate-limit error."""
     error_str = str(exception).lower()
     return any(pattern in error_str for pattern in QUOTA_ERROR_PATTERNS)
+
+
+def _is_not_found_error(exception: Exception) -> bool:
+    error_str = str(exception).lower()
+    return any(pattern in error_str for pattern in ["404", "not found", "is no longer available"])
 
 async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500, _retries: int = 4) -> dict:
     """Single async Gemini call with exponential backoff for 429 errors.
@@ -358,6 +368,18 @@ async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500,
                 logger.error("Gemini quota exceeded. Aborting without retry.")
                 raise GeminiQuotaError(
                     f"GEMINI_QUOTA_EXHAUSTED\n"
+                    f"TYPE={type(e).__name__}\nERROR={str(e)}\n"
+                    f"TRACEBACK={traceback.format_exc()}",
+                    raw_response=content,
+                    cleaned_response=cleaned_response,
+                    traceback_str=traceback.format_exc(),
+                    exception_type=type(e).__name__,
+                )
+            
+            if _is_not_found_error(e):
+                logger.error(f"Gemini model {settings.GEMINI_MODEL} not found (404). Aborting without retry.")
+                raise GeminiNotFoundError(
+                    f"GEMINI_MODEL_NOT_FOUND\n"
                     f"TYPE={type(e).__name__}\nERROR={str(e)}\n"
                     f"TRACEBACK={traceback.format_exc()}",
                     raw_response=content,
@@ -504,6 +526,25 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         import traceback as tb
         error_msg = "Gemini quota exceeded"
         logger.error(f"=== PARSE_AGENT QUOTA ERROR === {str(e)}")
+        state["errors"] = state.get("errors", []) + [error_msg]
+        state["parsed"] = {}
+        state["parse_confidence"] = 0.0
+        state["layout_type"] = state.get("layout_type", "unknown")
+        state["resume_language"] = state.get("resume_language", "en")
+        state["ai_content_probability"] = state.get("ai_content_probability", 0.0)
+        state["experience_months_total"] = 0
+        status = "failed"
+
+        # Do NOT log these to the state traces to avoid leaking to frontend
+        traceback_str = None
+        exception_type = None
+        raw_gemini_response = None
+        cleaned_gemini_response = None
+        
+    except GeminiNotFoundError as e:
+        import traceback as tb
+        error_msg = "Gemini model not found"
+        logger.error(f"=== PARSE_AGENT MODEL ERROR === {str(e)}")
         state["errors"] = state.get("errors", []) + [error_msg]
         state["parsed"] = {}
         state["parse_confidence"] = 0.0

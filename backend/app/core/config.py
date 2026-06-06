@@ -57,7 +57,7 @@ class Settings(BaseSettings):
 
     # Gemini
     GEMINI_API_KEY: str = Field(default="")
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # Embedding
     EMBEDDING_MODEL: str = "models/text-embedding-004"

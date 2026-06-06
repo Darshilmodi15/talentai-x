@@ -330,6 +330,16 @@ async def get_job_status(
             }
         )
 
+    if job.status == ProcessingStatus.FAILED and job.error_message == "Gemini model not found":
+        return JSONResponse(
+            status_code=404,
+            content={
+                "success": False,
+                "error_code": "MODEL_NOT_AVAILABLE",
+                "message": "AI model is temporarily unavailable."
+            }
+        )
+
     # Get candidate if completed
     candidate_id = None
     parse_confidence = None

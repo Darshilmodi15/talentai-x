@@ -24,6 +24,9 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 TalentAI-X starting up...")
     print(f"🌍 CORS Allowed Origins: {settings.ALLOWED_ORIGINS}")
+    print(f"🤖 Using Gemini model: {settings.GEMINI_MODEL}")
+    import logging
+    logging.getLogger(__name__).info(f"Using Gemini model: {settings.GEMINI_MODEL}")
     await init_db()
     print("✅ Database initialized")
     

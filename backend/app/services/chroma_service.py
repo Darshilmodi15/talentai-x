@@ -93,6 +93,11 @@ async def embed_candidate_profile(candidate_id: str, skills: list[dict], summary
                 if is_quota:
                     logger.error("Gemini quota exceeded. Aborting without retry.")
                     raise ValueError("Gemini quota exceeded")
+
+                is_not_found = any(pattern in error_str for pattern in ["404", "not found", "is no longer available"])
+                if is_not_found:
+                    logger.error("Gemini model not found. Aborting without retry.")
+                    raise ValueError("Gemini model not found")
                 
                 is_network = any(p in error_str for p in ["connection", "timeout", "transient", "network", "ssl"])
                 if is_network and attempt < len(BACKOFFS):
@@ -151,6 +156,11 @@ async def embed_skill_in_taxonomy(skill_id: str, skill_name: str, category: str,
                 if is_quota:
                     logger.error("Gemini quota exceeded. Aborting without retry.")
                     raise ValueError("Gemini quota exceeded")
+
+                is_not_found = any(pattern in error_str for pattern in ["404", "not found", "is no longer available"])
+                if is_not_found:
+                    logger.error("Gemini model not found. Aborting without retry.")
+                    raise ValueError("Gemini model not found")
                 
                 is_network = any(p in error_str for p in ["connection", "timeout", "transient", "network", "ssl"])
                 if is_network and attempt < len(BACKOFFS):
