@@ -247,6 +247,8 @@ async def match_candidate(
             )
             db.add(match_result)
             await db.commit()  # Ensure MatchResult is committed before HITL creation
+            await db.refresh(match_result)
+            assert match_result.id is not None
             match_id = str(match_result.id)
         except Exception as e:
             logger.error(f"Error persisting match result:\n{traceback.format_exc()}")
