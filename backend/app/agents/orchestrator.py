@@ -92,7 +92,7 @@ async def finalize_node(state: PipelineState) -> PipelineState:
     else:
         state["overall_status"] = "failed"
 
-    total_calls = state.get("gemini_api_calls", 0)
+    total_calls = state.get("gemini_api_calls") or 0
     logger.info(f"finalize_node: overall_status={state['overall_status']}")
     logger.info(f"Total Gemini requests used for upload {state.get('job_id', 'unknown')}: {total_calls}")
     return state
@@ -179,6 +179,7 @@ async def run_parse_pipeline(
         "traces": [],
         "errors": [],
         "overall_status": "processing",
+        "gemini_api_calls": 0,
     }
 
     final_state = await pipeline.ainvoke(initial_state)  # type: ignore[attr-defined]

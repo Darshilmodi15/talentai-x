@@ -280,7 +280,7 @@ async def semantic_skill_lookup_batch(skills: list[str], state: PipelineState) -
         res = None
         for attempt in range(4):
             try:
-                state["gemini_api_calls"] = state.get("gemini_api_calls", 0) + 1
+                state["gemini_api_calls"] = (state.get("gemini_api_calls") or 0) + 1
                 logger.info(f"Calling Gemini | agent=normalize_agent | job_id={job_id} | attempt={attempt+1}")
                 genai.configure(api_key=settings.GEMINI_API_KEY)
                 res = genai.embed_content(

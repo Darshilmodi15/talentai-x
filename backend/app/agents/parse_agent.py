@@ -292,7 +292,7 @@ async def call_gemini(prompt: str, state: dict, max_tokens: int = 2500, _retries
 
     for attempt in range(_retries):
         try:
-            state["gemini_api_calls"] = state.get("gemini_api_calls", 0) + 1
+            state["gemini_api_calls"] = (state.get("gemini_api_calls") or 0) + 1
             genai.configure(api_key=settings.GEMINI_API_KEY)
             model = genai.GenerativeModel(settings.GEMINI_MODEL)
 
