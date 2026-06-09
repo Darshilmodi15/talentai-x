@@ -292,4 +292,4 @@ talentai-x/
 
 ---
 
-*Built with Gemini (Google) · LangGraph · FastAPI · React · ChromaDB*
+
