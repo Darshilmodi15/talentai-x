@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     # Startup
     print("🚀 TalentAI-X starting up...")
     print(f"🌍 CORS Allowed Origins: {settings.ALLOWED_ORIGINS}")
+    print(f"🌍 CORS Allowed Origin Regex: {settings.ALLOWED_ORIGIN_REGEX}")
     print(f"🤖 Using Gemini model: {settings.GEMINI_MODEL}")
     import logging
     logging.getLogger(__name__).info(f"Using Gemini model: {settings.GEMINI_MODEL}")
@@ -78,6 +79,7 @@ Built for NYC Local Law 144 and Colorado AI Act 2026.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origin_regex=settings.ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

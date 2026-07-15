@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "https://talentai-x.vercel.app",
     ]
+    # Allows Vercel preview deployments and local dev ports without editing env.
+    # CORSMiddleware still echoes the concrete Origin; this is not a wildcard response.
+    # Broad by default for hosted demos: Render/Vercel preview URLs change often.
+    # API auth is still enforced separately through X-API-Key.
+    ALLOWED_ORIGIN_REGEX: Optional[str] = r"https://.*|http://localhost:\d+|http://127\.0\.0\.1:\d+"
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     def parse_allowed_origins(cls, v):
