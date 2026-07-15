@@ -279,6 +279,15 @@ class GeminiNotFoundError(GeminiCallError):
     pass
 
 
+class GeminiPermissionDeniedError(GeminiCallError):
+    """Raised for 401/403 provider access problems.
+
+    This must not leak provider tracebacks to the UI. We can still provide a
+    deterministic parse fallback from extracted resume text.
+    """
+    pass
+
+
 class GeminiJSONError(GeminiCallError):
     """Raised when JSON parsing fails completely even after repair."""
     pass
@@ -293,6 +302,12 @@ def _is_quota_error(exception: Exception) -> bool:
 def _is_not_found_error(exception: Exception) -> bool:
     error_str = str(exception).lower()
     return any(pattern in error_str for pattern in ["404", "not found", "is no longer available"])
+
+
+def _is_permission_denied_error(exception: Exception) -> bool:
+    error_str = str(exception).lower()
+    return any(pattern in error_str for pattern in ["403", "permission denied", "denied access", "unauthorized", "invalid api key"])
+
 
 async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500, _retries: int = 4) -> dict:
     """Single async Gemini call with exponential backoff for 429 errors.
@@ -463,6 +478,16 @@ async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500,
                     traceback_str=traceback.format_exc(),
                     exception_type=type(e).__name__,
                 )
+
+            if _is_permission_denied_error(e):
+                logger.error("Gemini permission denied. Aborting retries and using caller fallback if available.")
+                raise GeminiPermissionDeniedError(
+                    "AI provider access denied",
+                    raw_response=content,
+                    cleaned_response=cleaned_response,
+                    traceback_str="",
+                    exception_type=type(e).__name__,
+                )
             
             error_str = str(e).lower()
             is_network = any(p in error_str for p in ["connection", "timeout", "transient", "network", "ssl"])
@@ -502,6 +527,68 @@ async def extract_all_info(raw_text: str, state: PipelineState) -> dict:
     return await call_gemini(PROMPT_EXTRACT_ALL.replace("{text}", text_chunk), state, max_tokens=2500)
 
 
+def heuristic_parse_resume(raw_text: str) -> dict:
+    """Best-effort parser used when the AI provider is unavailable/denied.
+
+    It intentionally extracts only evidence present in the resume text. This
+    avoids total product failure and lets later normalization/matching still work
+    with lower confidence.
+    """
+    import re
+    from app.agents.normalize_agent import SYNONYMS
+
+    text = raw_text or ""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    email_match = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", text, re.I)
+    phone_match = re.search(r"(?:\+?\d[\d\s().-]{7,}\d)", text)
+    urls = re.findall(r"https?://[^\s)>,]+|(?:www\.)[^\s)>,]+", text, re.I)
+
+    name = None
+    for line in lines[:12]:
+        lower = line.lower()
+        if any(token in lower for token in ["@", "http", "www.", "resume", "curriculum", "linkedin", "github"]):
+            continue
+        words = re.findall(r"[A-Za-z][A-Za-z'.-]+", line)
+        if 1 <= len(words) <= 4 and len(line) <= 80:
+            name = " ".join(words)
+            break
+
+    found_skills: list[str] = []
+    text_lower = text.lower()
+    for alias, canonical in sorted(SYNONYMS.items(), key=lambda kv: len(kv[0]), reverse=True):
+        pattern = r"(?<![\w.+#-])" + re.escape(alias.lower()) + r"(?![\w.+#-])"
+        if re.search(pattern, text_lower) and canonical not in found_skills:
+            found_skills.append(canonical)
+
+    linkedin_url = next((u for u in urls if "linkedin.com" in u.lower()), None)
+    github_url = next((u for u in urls if "github.com" in u.lower()), None)
+
+    exp_years = 0
+    exp_matches = [int(y) for y in re.findall(r"(\d{1,2})\+?\s*(?:years|yrs)\b", text_lower)]
+    if exp_matches:
+        exp_years = max(exp_matches)
+
+    return {
+        "name": name,
+        "email": email_match.group(0) if email_match else None,
+        "phone": phone_match.group(0).strip() if phone_match else None,
+        "location": None,
+        "summary": "Best-effort parse generated without AI provider access.",
+        "linkedin_url": linkedin_url,
+        "github_url": github_url,
+        "portfolio_url": None,
+        "other_urls": [u for u in urls if u not in {linkedin_url, github_url}],
+        "experience": [],
+        "experience_months_total": exp_years * 12,
+        "education": [],
+        "skills": found_skills,
+        "certifications": [],
+        "projects": [],
+        "publications": [],
+    }
+
+
 def compute_parse_confidence(parsed: dict) -> float:
     """Score how complete the parse is. 0.0–1.0"""
     key_fields = ["name", "email", "skills", "experience", "education"]
@@ -526,6 +613,8 @@ async def parse_agent(state: PipelineState) -> PipelineState:
     exception_type = None
     raw_gemini_response = None
     cleaned_gemini_response = None
+    raw_text = ""
+    status = "success"
 
     try:
         logger.info(f"=== PARSE_AGENT START === job_id={state.get('job_id')} file={state.get('file_name')}")
@@ -558,8 +647,14 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         # Step 4: Detect AI content
         state["ai_content_probability"] = detect_ai_content(raw_text)
 
-        # Step 5: Single LLM extraction (with one retry)
-        parsed = await extract_all_info(raw_text, state)
+        # Step 5: Single LLM extraction (with deterministic fallback when no key is configured)
+        if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY == "your_gemini_api_key_here":
+            logger.warning("Gemini API key missing/placeholder; using heuristic resume parser")
+            parsed = heuristic_parse_resume(raw_text)
+            status = "degraded"
+            error_msg = "AI provider not configured; used best-effort parser"
+        else:
+            parsed = await extract_all_info(raw_text, state)
 
         # Retry if basic info is completely empty (non-quota failures only)
         if not parsed.get("name") and retry_count < 1:
@@ -595,8 +690,36 @@ async def parse_agent(state: PipelineState) -> PipelineState:
             )
             state["errors"] = state.get("errors", []) + [f"parse_agent: {error_msg}"]
         else:
-            status = "success"
-            logger.info(f"Parse succeeded with confidence={confidence}")
+            status = status if status == "degraded" else "success"
+            logger.info(f"Parse succeeded with confidence={confidence}, status={status}")
+
+    except GeminiPermissionDeniedError as e:
+        logger.error("=== PARSE_AGENT PROVIDER ACCESS DENIED === %s", str(e))
+        parsed = heuristic_parse_resume(raw_text)
+        confidence = compute_parse_confidence(parsed)
+        if confidence > 0.0:
+            state["parsed"] = parsed
+            state["parse_confidence"] = confidence
+            state["experience_months_total"] = parsed.get("experience_months_total", 0)
+            state["layout_type"] = state.get("layout_type", "unknown")
+            state["resume_language"] = state.get("resume_language", "en")
+            state["ai_content_probability"] = state.get("ai_content_probability", 0.0)
+            error_msg = "AI provider access denied; used best-effort parser"
+            status = "degraded"
+        else:
+            error_msg = "AI provider access denied. Please check the Gemini API key/project access."
+            state["errors"] = state.get("errors", []) + [error_msg]
+            state["parsed"] = {}
+            state["parse_confidence"] = 0.0
+            state["layout_type"] = state.get("layout_type", "unknown")
+            state["resume_language"] = state.get("resume_language", "en")
+            state["ai_content_probability"] = state.get("ai_content_probability", 0.0)
+            state["experience_months_total"] = 0
+            status = "failed"
+        traceback_str = None
+        exception_type = e.exception_type
+        raw_gemini_response = None
+        cleaned_gemini_response = None
 
     except GeminiQuotaError as e:
         import traceback as tb
@@ -649,10 +772,38 @@ async def parse_agent(state: PipelineState) -> PipelineState:
         state["experience_months_total"] = 0
         status = "failed"
 
-        traceback_str = e.traceback_str
+        traceback_str = None
         exception_type = e.exception_type
-        raw_gemini_response = e.raw_response
-        cleaned_gemini_response = e.cleaned_response
+        raw_gemini_response = None
+        cleaned_gemini_response = None
+
+    except GeminiCallError as e:
+        logger.error("=== PARSE_AGENT AI PROVIDER ERROR === %s", str(e))
+        parsed = heuristic_parse_resume(raw_text)
+        confidence = compute_parse_confidence(parsed)
+        if confidence > 0.0:
+            state["parsed"] = parsed
+            state["parse_confidence"] = confidence
+            state["experience_months_total"] = parsed.get("experience_months_total", 0)
+            state["layout_type"] = state.get("layout_type", "unknown")
+            state["resume_language"] = state.get("resume_language", "en")
+            state["ai_content_probability"] = state.get("ai_content_probability", 0.0)
+            error_msg = "AI provider unavailable; used best-effort parser"
+            status = "degraded"
+        else:
+            error_msg = "AI provider unavailable. Please try again later or check provider configuration."
+            state["errors"] = state.get("errors", []) + [error_msg]
+            state["parsed"] = {}
+            state["parse_confidence"] = 0.0
+            state["layout_type"] = state.get("layout_type", "unknown")
+            state["resume_language"] = state.get("resume_language", "en")
+            state["ai_content_probability"] = state.get("ai_content_probability", 0.0)
+            state["experience_months_total"] = 0
+            status = "failed"
+        traceback_str = None
+        exception_type = e.exception_type
+        raw_gemini_response = None
+        cleaned_gemini_response = None
 
     except Exception as e:
         import traceback as tb

@@ -106,7 +106,7 @@ async def process_resume_task(
                     error_summary = "; ".join(errors) if errors else "Parse pipeline failed — no data extracted"
 
                 job.status = ProcessingStatus.FAILED
-                job.error_message = error_summary
+                job.error_message = sanitize_job_error(error_summary) or "Parse pipeline failed"
                 job.completed_at = datetime.now(timezone.utc)
                 await db.commit()
 
@@ -134,7 +134,7 @@ async def process_resume_task(
         except Exception as e:
             logger.exception(f"Job {job_id} — unhandled exception in process_resume_task")
             job.status = ProcessingStatus.FAILED
-            job.error_message = f"{type(e).__name__}: {str(e)}"
+            job.error_message = sanitize_job_error(f"{type(e).__name__}: {str(e)}") or "Parse pipeline failed"
             job.completed_at = datetime.now(timezone.utc)
             await db.commit()
 
@@ -148,6 +148,26 @@ ALLOWED_EXTENSIONS = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
     "text/plain": "txt",
 }
+
+
+def sanitize_job_error(error: Optional[str]) -> Optional[str]:
+    """Return a safe, concise message for the UI.
+
+    Older failures may contain Python tracebacks/provider internals persisted in
+    ParseJob.error_message. Never send those raw strings back to the browser.
+    """
+    if not error:
+        return None
+    lower = error.lower()
+    if "permissiondenied" in lower or "permission denied" in lower or "denied access" in lower or "403" in lower:
+        return "AI provider access denied. Please check the Gemini API key/project access."
+    if "quota" in lower or "429" in lower or "resource exhausted" in lower:
+        return "AI provider quota exceeded. Please try again later."
+    if "model not found" in lower or "404" in lower:
+        return "Configured AI model is unavailable. Please check GEMINI_MODEL."
+    if "traceback" in lower or len(error) > 500:
+        return "Resume parsing failed due to an internal AI provider error. Please try again."
+    return error
 
 
 @router.post(
@@ -350,6 +370,18 @@ async def get_job_status(
             }
         )
 
+    if job.status == ProcessingStatus.FAILED and job.error_message and any(
+        token in job.error_message.lower() for token in ["permissiondenied", "permission denied", "denied access", "403"]
+    ):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "success": False,
+                "error_code": "AI_PROVIDER_ACCESS_DENIED",
+                "message": "AI provider access denied. Please check the Gemini API key/project access."
+            }
+        )
+
     # Get candidate if completed
     candidate_id = None
     parse_confidence = None
@@ -385,7 +417,7 @@ async def get_job_status(
         resume_language=lang,
         ai_content_probability=ai_prob,
         skills_found=skills_count,
-        error_message=job.error_message,
+        error_message=sanitize_job_error(job.error_message),
         partial_result=None,
     )
 
