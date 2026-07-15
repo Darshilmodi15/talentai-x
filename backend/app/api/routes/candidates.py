@@ -33,14 +33,16 @@ async def list_candidates(
 ):
     offset = (page - 1) * page_size
     stmt = select(Candidate).order_by(Candidate.created_at.desc())
+    total_stmt = select(func.count()).select_from(Candidate)
 
     if search:
-        stmt = stmt.where(
+        search_filter = (
             Candidate.name.ilike(f"%{search}%") |
             Candidate.email.ilike(f"%{search}%")
         )
+        stmt = stmt.where(search_filter)
+        total_stmt = total_stmt.where(search_filter)
 
-    total_stmt = select(func.count()).select_from(Candidate)
     total = await db.scalar(total_stmt)
 
     result = await db.execute(stmt.offset(offset).limit(page_size))

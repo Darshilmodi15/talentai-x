@@ -19,24 +19,42 @@ COLLECTIONS = {
 
 
 def get_chroma_client() -> "typing.Any | None":
+    """Return a Chroma client.
+
+    The project runs a local Chroma server in docker-compose, but the previous
+    implementation always tried Chroma Cloud and silently disabled vector
+    features unless cloud credentials existed. Prefer Cloud only when an API key
+    is configured; otherwise connect to the local HTTP server.
+    """
     global _client, _chroma_available
     if _client is None and not _chroma_available:
         try:
             import chromadb
-            logger.info(
-                f"Connecting to Chroma Cloud "
-                f"(tenant={settings.CHROMA_TENANT}, db={settings.CHROMA_DATABASE}, "
-                f"chromadb_version={chromadb.__version__})"
-            )
-            _client = chromadb.CloudClient(
-                api_key=settings.CHROMA_API_KEY,
-                tenant=settings.CHROMA_TENANT,
-                database=settings.CHROMA_DATABASE,
-            )
+            if settings.CHROMA_API_KEY:
+                logger.info(
+                    f"Connecting to Chroma Cloud "
+                    f"(tenant={settings.CHROMA_TENANT}, db={settings.CHROMA_DATABASE}, "
+                    f"chromadb_version={chromadb.__version__})"
+                )
+                _client = chromadb.CloudClient(
+                    api_key=settings.CHROMA_API_KEY,
+                    tenant=settings.CHROMA_TENANT,
+                    database=settings.CHROMA_DATABASE,
+                )
+                logger.info("✅ Chroma Cloud connected")
+            else:
+                logger.info(
+                    f"Connecting to local Chroma at {settings.CHROMA_HOST}:{settings.CHROMA_PORT} "
+                    f"(chromadb_version={chromadb.__version__})"
+                )
+                _client = chromadb.HttpClient(
+                    host=settings.CHROMA_HOST,
+                    port=settings.CHROMA_PORT,
+                )
+                logger.info("✅ Local Chroma connected")
             _chroma_available = True
-            logger.info("✅ Chroma Cloud connected")
         except Exception as e:
-            logger.error(f"❌ Chroma Cloud connection failed: {e}", exc_info=True)
+            logger.error(f"❌ Chroma connection failed: {e}", exc_info=True)
             _client = None
             _chroma_available = False
     return _client
@@ -180,11 +198,11 @@ async def embed_skill_in_taxonomy(skill_id: str, skill_name: str, category: str,
         collection.upsert(
             ids=[skill_id],
             embeddings=[embedding],  # type: ignore
-            metadatas={
+            metadatas=[{
                 "canonical_name": skill_name,
                 "category": category,
                 "parent": parent,
-            },
+            }],
         )
     except Exception as e:
         logger.warning(f"Warning: Could not embed skill '{skill_name}': {e}")

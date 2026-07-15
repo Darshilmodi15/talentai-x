@@ -42,7 +42,7 @@ SYNONYMS: dict[str, str] = {
     "pandas": "pandas", "pd": "pandas",
     "numpy": "numpy", "np": "numpy",
     "sklearn": "scikit-learn", "scikit-learn": "scikit-learn",
-    "tf": "tensorflow", "tensorflow": "tensorflow", "tensorflow2": "tensorflow",
+    "tensorflow": "tensorflow", "tensorflow2": "tensorflow", "tf": "tensorflow",
     "torch": "pytorch", "pytorch": "pytorch",
     "keras": "keras", "huggingface": "hugging face", "hf": "hugging face",
     "langchain": "langchain", "langgraph": "langgraph",
@@ -71,7 +71,7 @@ SYNONYMS: dict[str, str] = {
     # DevOps / Infrastructure
     "k8s": "kubernetes", "kubernetes": "kubernetes",
     "docker": "docker", "dockerfile": "docker",
-    "tf": "terraform", "terraform": "terraform",
+    "terraform": "terraform", "tfvars": "terraform",
     "ci/cd": "ci/cd", "cicd": "ci/cd",
     "github actions": "github actions", "jenkins": "jenkins",
     "ansible": "ansible", "helm": "helm",
@@ -251,11 +251,17 @@ def get_chroma_client():
     global _chroma_client
     if _chroma_client is None:
         import chromadb
-        _chroma_client = chromadb.CloudClient(
-            api_key=settings.CHROMA_API_KEY,
-            tenant=settings.CHROMA_TENANT,
-            database=settings.CHROMA_DATABASE,
-        )
+        if settings.CHROMA_API_KEY:
+            _chroma_client = chromadb.CloudClient(
+                api_key=settings.CHROMA_API_KEY,
+                tenant=settings.CHROMA_TENANT,
+                database=settings.CHROMA_DATABASE,
+            )
+        else:
+            _chroma_client = chromadb.HttpClient(
+                host=settings.CHROMA_HOST,
+                port=settings.CHROMA_PORT,
+            )
     return _chroma_client
 
 

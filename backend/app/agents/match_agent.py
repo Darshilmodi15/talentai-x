@@ -10,6 +10,7 @@ Agent 3: Semantic Matcher
 - HITL trigger evaluation
 """
 import json
+import re
 import time
 from datetime import datetime, timezone
 from typing import Optional, Any
@@ -136,7 +137,20 @@ Schema:
 _model = None
 
 
+def _local_token_embedding(text: str, dims: int = 256) -> list[float]:
+    """Small deterministic fallback embedding based on token hashing."""
+    import hashlib
+    vec = [0.0] * dims
+    for token in re.findall(r"[a-z0-9.+#-]+", text.lower()):
+        idx = int(hashlib.sha256(token.encode()).hexdigest()[:8], 16) % dims
+        vec[idx] += 1.0
+    return vec
+
+
 def embed_text(text: str) -> list[float]:
+    if not settings.GEMINI_API_KEY:
+        return _local_token_embedding(text)
+
     import google.generativeai as genai
     import logging
     logger = logging.getLogger(__name__)
@@ -164,7 +178,33 @@ def cosine_sim(a: list[float], b: list[float]) -> float:
 # JD Parsing
 # ──────────────────────────────────────────────────────────────────
 
+def heuristic_parse_job_description(jd: str) -> dict:
+    """Deterministic fallback so matching does not collapse when the LLM JD parser fails."""
+    from app.agents.normalize_agent import SYNONYMS
+
+    text = jd.lower()
+    found: list[str] = []
+    # Prefer longer aliases first so "node.js" wins over "node".
+    for alias, canonical in sorted(SYNONYMS.items(), key=lambda kv: len(kv[0]), reverse=True):
+        pattern = r"(?<![\w.+#-])" + re.escape(alias.lower()) + r"(?![\w.+#-])"
+        if re.search(pattern, text) and canonical not in found:
+            found.append(canonical)
+
+    exp_match = re.search(r"(\d+)\+?\s*(?:years|yrs)", text)
+    return {
+        "title": "Unspecified",
+        "required_skills": found[:12],
+        "nice_to_have_skills": [],
+        "experience_years_min": int(exp_match.group(1)) if exp_match else 0,
+        "education_requirement": None,
+        "key_responsibilities": [],
+    }
+
+
 async def parse_job_description(jd: str) -> dict:
+    if not settings.GEMINI_API_KEY:
+        return heuristic_parse_job_description(jd)
+
     import google.generativeai as genai
     import logging
     logger = logging.getLogger(__name__)
@@ -184,9 +224,13 @@ async def parse_job_description(jd: str) -> dict:
             content = content.split("```")[1]
             if content.startswith("json"):
                 content = content[4:]
-        return json.loads(content)
+        parsed = json.loads(content)
+        if not parsed.get("required_skills"):
+            fallback = heuristic_parse_job_description(jd)
+            parsed["required_skills"] = fallback["required_skills"]
+        return parsed
     except Exception:
-        return {"required_skills": [], "nice_to_have_skills": [], "experience_years_min": 0}
+        return heuristic_parse_job_description(jd)
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -203,13 +247,23 @@ def find_best_skill_match(
     Uses embedding cosine similarity.
     """
     try:
+        jd_lower = jd_skill.lower().strip()
         jd_emb = embed_text(jd_skill)
         best_score = 0.0
         best_match = None
 
         for cs in candidate_skills:
+            if not isinstance(cs, dict):
+                continue
             skill_text = cs.get("canonical", cs.get("raw", ""))
             if not skill_text:
+                continue
+            skill_lower = skill_text.lower().strip()
+            if skill_lower == jd_lower:
+                return {**cs, "match_score": 1.0}
+            if jd_lower in skill_lower or skill_lower in jd_lower:
+                best_score = max(best_score, 0.92)
+                best_match = cs
                 continue
             cs_emb = embed_text(skill_text)
             score = cosine_sim(jd_emb, cs_emb)
@@ -366,6 +420,13 @@ async def run_cot_match(
     candidate_skills: list[Any],
     experience: list[dict],
 ) -> str:
+    if not settings.GEMINI_API_KEY:
+        required = jd_parsed.get("required_skills", [])
+        return (
+            f"Deterministic analysis: evaluated {len(candidate_skills)} candidate skills "
+            f"against {len(required)} required skills. STEP 6 - RECOMMENDATION: CONDITIONAL"
+        )
+
     import google.generativeai as genai
     import logging
     logger = logging.getLogger(__name__)
@@ -405,6 +466,20 @@ async def generate_interview_questions(
     gaps: list[str],
     recommendation: str,
 ) -> dict:
+    if not settings.GEMINI_API_KEY:
+        matched_names = [m.get("candidate_skill", m.get("canonical", "skill")) if isinstance(m, dict) else getattr(m, "candidate_skill", "skill") for m in matched[:3]]
+        return {
+            "technical": [
+                {"question": f"Walk through a production problem you solved with {skill}.", "what_to_listen_for": "Depth, tradeoffs, debugging approach."}
+                for skill in (matched_names or ["the candidate's strongest skill"])
+            ],
+            "gap_probe": [
+                {"question": f"How would you ramp up on {gap} in the first month?", "what_to_listen_for": "Practical learning plan and risk awareness."}
+                for gap in gaps[:2]
+            ],
+            "culture": {"question": "Describe a time you improved a system or process without being asked.", "what_to_listen_for": "Ownership and measurable impact."},
+        }
+
     import google.generativeai as genai
     import logging
     logger = logging.getLogger(__name__)
@@ -437,6 +512,17 @@ async def generate_interview_questions(
 async def generate_upskilling(gaps: list[str]) -> dict:
     if not gaps:
         return {}
+    if not settings.GEMINI_API_KEY:
+        return {
+            gap: {
+                "priority": "important",
+                "weeks_to_learn": 4,
+                "resources": [f"Official {gap} documentation", "Build a small portfolio project"],
+                "first_step": f"Complete a hands-on {gap} quickstart and apply it to a toy project.",
+            }
+            for gap in gaps[:8]
+        }
+
     import google.generativeai as genai
     import logging
     logger = logging.getLogger(__name__)
@@ -492,8 +578,11 @@ async def match_agent(
         nice = jd_parsed.get("nice_to_have_skills", [])
 
         # 2. Embed both sides for semantic score
-        candidate_text = " ".join(s["canonical"] for s in all_skills)
-        jd_text = " ".join(required + nice)
+        candidate_text = " ".join(
+            s.get("canonical", s.get("raw", "")) if isinstance(s, dict) else getattr(s, "canonical", "")
+            for s in all_skills
+        )
+        jd_text = " ".join(required + nice) or job_description[:2000]
         
         logger.info("Generating embeddings")
         try:
@@ -549,7 +638,10 @@ async def match_agent(
 
         # 7. Blind score (bias shield)
         blind_profile = create_blind_profile(parsed)
-        blind_text = " ".join(s["canonical"] for s in candidate_skills)  # skills unchanged
+        blind_text = " ".join(
+            s.get("canonical", s.get("raw", "")) if isinstance(s, dict) else getattr(s, "canonical", "")
+            for s in candidate_skills
+        )  # skills unchanged
         blind_score = full_score  # in production: re-run matcher with blind profile
         # Simulate slight adjustment for demo
         blind_score = min(full_score + 0.02, 1.0)  # blind tends to be slightly higher

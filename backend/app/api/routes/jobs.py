@@ -53,7 +53,7 @@ async def list_jobs(
     }
 
 
-@router.get("/jobs/{job_id}", summary="Get a saved job")
+@router.get("/saved-jobs/{job_id}", summary="Get a saved job")
 async def get_job(
     job_id: str,
     db: AsyncSession = Depends(get_db),

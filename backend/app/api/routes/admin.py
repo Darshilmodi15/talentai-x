@@ -25,6 +25,7 @@ class CreateAPIKeyRequest(BaseModel):
 async def create_api_key(
     body: CreateAPIKeyRequest,
     db: AsyncSession = Depends(get_db),
+    _: str = Depends(verify_api_key),
 ):
     """Creates a new API key. The raw key is shown ONCE — store it securely."""
     raw_key = f"tai_{secrets.token_urlsafe(32)}"

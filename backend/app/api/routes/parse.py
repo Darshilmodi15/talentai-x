@@ -320,7 +320,7 @@ async def get_job_status(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if job.status == ProcessingStatus.FAILED and job.error_message == "Gemini quota exceeded":
+    if job.status == ProcessingStatus.FAILED and job.error_message and "Gemini quota exceeded" in job.error_message:
         return JSONResponse(
             status_code=429,
             content={
@@ -330,7 +330,7 @@ async def get_job_status(
             }
         )
 
-    if job.status == ProcessingStatus.FAILED and job.error_message == "Gemini model not found":
+    if job.status == ProcessingStatus.FAILED and job.error_message and "Gemini model not found" in job.error_message:
         return JSONResponse(
             status_code=404,
             content={
@@ -340,7 +340,7 @@ async def get_job_status(
             }
         )
 
-    if job.status == ProcessingStatus.FAILED and job.error_message == "Gemini JSON format invalid":
+    if job.status == ProcessingStatus.FAILED and job.error_message and "Gemini JSON format invalid" in job.error_message:
         return JSONResponse(
             status_code=500,
             content={
