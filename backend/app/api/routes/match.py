@@ -32,7 +32,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 class MatchRequest(BaseModel):
     candidate_id: str = Field(..., description="UUID of the parsed candidate")
-    job_description: str = Field(..., min_length=50, description="Full job description text")
+    job_description: str = Field(..., min_length=10, description="Full job description text")
     weights: Optional[dict] = Field(
         None,
         description="Custom scoring weights. Keys: required_skill_coverage, semantic_similarity, experience_depth, nice_to_have_coverage",
@@ -56,6 +56,7 @@ class MatchResponse(BaseModel):
     upskilling_suggestions: dict
     shap_values: dict
     summary: str
+    cot_reasoning: str
     recommendation: str
     interview_questions: dict
     hitl_required: bool
@@ -64,7 +65,7 @@ class MatchResponse(BaseModel):
 
 class BatchMatchRequest(BaseModel):
     candidate_ids: list[str] = Field(..., max_length=100)
-    job_description: str = Field(..., min_length=50)
+    job_description: str = Field(..., min_length=10)
     top_n: int = Field(10, ge=1, le=100)
 
 
@@ -326,6 +327,7 @@ async def match_candidate(
         upskilling_suggestions=state["upskilling_suggestions"],
         shap_values=state["shap_values"],
         summary=state["match_summary"],
+        cot_reasoning=state["cot_reasoning"],
         recommendation=extract_recommendation(state["cot_reasoning"]),
         interview_questions=state["interview_questions"],
         hitl_required=state["hitl_required"],
@@ -345,12 +347,14 @@ async def batch_match(
     _: str = Depends(verify_api_key),
 ):
     results = []
+    failures = []
 
     for cand_id_str in body.candidate_ids:
         try:
             cand_uuid = uuid.UUID(cand_id_str)
             candidate = await db.get(Candidate, cand_uuid)
             if not candidate:
+                failures.append({"candidate_id": cand_id_str, "error": "Candidate not found"})
                 continue
 
             state = await build_state_from_candidate(candidate)
@@ -366,14 +370,18 @@ async def batch_match(
                 "skill_gaps": state["skill_gaps"][:3],
                 "recommendation": extract_recommendation(state["cot_reasoning"]),
             })
-        except Exception:
-            continue
+        except ValueError:
+            failures.append({"candidate_id": cand_id_str, "error": "Invalid candidate_id"})
+        except Exception as exc:
+            failures.append({"candidate_id": cand_id_str, "error": f"{type(exc).__name__}: {str(exc)[:160]}"})
 
     # Sort by blind_score (unbiased ranking)
     results.sort(key=lambda x: x["blind_score"], reverse=True)
 
     return {
         "total_candidates": len(results),
+        "failed_candidates": len(failures),
+        "failures": failures,
         "job_description_preview": body.job_description[:100] + "...",
         "ranking_method": "blind_score",
         "shortlist": results[: body.top_n],

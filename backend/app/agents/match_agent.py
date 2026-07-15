@@ -157,12 +157,19 @@ def embed_text(text: str) -> list[float]:
     logger.info("GEMINI CALL: match_agent.py | embed_text | job_id=unknown")
     logger.info(f"Generating embedding | model={settings.EMBEDDING_MODEL} | text_length={len(text)}")
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    res = genai.embed_content(
-        model=settings.EMBEDDING_MODEL,
-        content=text[:2000],
-        task_type="semantic_similarity"
-    )
-    return res['embedding']
+    try:
+        res = genai.embed_content(
+            model=settings.EMBEDDING_MODEL,
+            content=text[:2000],
+            task_type="semantic_similarity"
+        )
+        return res['embedding']
+    except Exception as exc:
+        # Matching should remain usable during intermittent Gemini quota/network/model
+        # failures. Resume parsing still needs the LLM, but scoring can degrade to a
+        # deterministic local vector instead of surfacing a large 500 error.
+        logger.warning("Gemini embedding failed; using local fallback embedding: %s", exc)
+        return _local_token_embedding(text)
 
 
 def cosine_sim(a: list[float], b: list[float]) -> float:

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import {
   Zap, Shield, AlertTriangle, CheckCircle, ChevronDown, ChevronUp,
   BookOpen, MessageSquare, BarChart3
@@ -8,7 +9,8 @@ import toast from 'react-hot-toast'
 import { listCandidates, matchCandidate } from '../../api/client'
 
 export default function MatchPage() {
-  const [selectedCandidate, setSelectedCandidate] = useState('')
+  const [searchParams] = useSearchParams()
+  const [selectedCandidate, setSelectedCandidate] = useState(searchParams.get('candidate') || '')
   const [jobDescription, setJobDescription] = useState('')
   const [result, setResult] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -20,9 +22,14 @@ export default function MatchPage() {
     queryFn: () => listCandidates(),
   })
 
+  useEffect(() => {
+    const candidateFromUrl = searchParams.get('candidate')
+    if (candidateFromUrl) setSelectedCandidate(candidateFromUrl)
+  }, [searchParams])
+
   const handleMatch = async () => {
     if (!selectedCandidate) return toast.error('Select a candidate')
-    if (!jobDescription.trim()) return toast.error('Enter a job description')
+    if (jobDescription.trim().length < 10) return toast.error('Enter at least 10 characters for the job description')
     setLoading(true)
     setResult(null)
     try {
@@ -42,14 +49,15 @@ export default function MatchPage() {
   }
 
   const scoreBar = (score: number) => {
-    const pct = Math.round(score * 100)
-    const color = score >= 0.8 ? 'bg-green-500' : score >= 0.6 ? 'bg-amber-500' : 'bg-red-500'
+    const safeScore = Math.max(0, Math.min(1, Number.isFinite(score) ? score : 0))
+    const pct = Math.round(safeScore * 100)
+    const color = safeScore >= 0.8 ? 'bg-green-500' : safeScore >= 0.6 ? 'bg-amber-500' : 'bg-red-500'
     return (
       <div className="flex items-center gap-3">
         <div className="flex-1 bg-gray-100 rounded-full h-2">
           <div className={`h-2 rounded-full ${color}`} style={{ width: `${pct}%` }} />
         </div>
-        <span className={`text-sm font-bold ${scoreColor(score)}`}>{pct}%</span>
+        <span className={`text-sm font-bold ${scoreColor(safeScore)}`}>{pct}%</span>
       </div>
     )
   }

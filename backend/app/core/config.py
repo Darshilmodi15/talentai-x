@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
+    SQL_ECHO: bool = False
 
     # API Security
     SECRET_KEY: str = "change_this_in_production"

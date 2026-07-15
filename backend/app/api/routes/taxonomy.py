@@ -33,13 +33,16 @@ async def browse_taxonomy(
     _: str = Depends(verify_api_key),
 ):
     stmt = select(SkillTaxonomy).order_by(SkillTaxonomy.category, SkillTaxonomy.name)
+    total_stmt = select(func.count()).select_from(SkillTaxonomy)
 
     if category:
         stmt = stmt.where(SkillTaxonomy.category == category)
+        total_stmt = total_stmt.where(SkillTaxonomy.category == category)
     if parent:
         stmt = stmt.where(SkillTaxonomy.parent == parent)
+        total_stmt = total_stmt.where(SkillTaxonomy.parent == parent)
 
-    total = await db.scalar(select(func.count()).select_from(SkillTaxonomy))
+    total = await db.scalar(total_stmt)
     offset = (page - 1) * page_size
     result = await db.execute(stmt.offset(offset).limit(page_size))
     skills = result.scalars().all()

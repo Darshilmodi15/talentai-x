@@ -26,7 +26,7 @@ export default function BatchMatchPage() {
   }
 
   const handleBatchMatch = async () => {
-    if (!jobDescription.trim()) return toast.error('Enter a job description')
+    if (jobDescription.trim().length < 10) return toast.error('Enter at least 10 characters for the job description')
     if (selectedIds.length === 0) return toast.error('Select at least one candidate')
     setLoading(true)
     setResult(null)
@@ -54,8 +54,9 @@ export default function BatchMatchPage() {
   }
 
   const scoreColor = (score: number) => {
-    if (score >= 0.8) return 'text-green-600'
-    if (score >= 0.6) return 'text-amber-600'
+    const safeScore = Math.max(0, Math.min(1, Number.isFinite(score) ? score : 0))
+    if (safeScore >= 0.8) return 'text-green-600'
+    if (safeScore >= 0.6) return 'text-amber-600'
     return 'text-red-600'
   }
 
@@ -160,7 +161,9 @@ export default function BatchMatchPage() {
                 <h2 className="font-semibold text-gray-900 text-sm">
                   Ranked shortlist — {result.total_candidates} candidates
                 </h2>
-                <span className="text-xs text-gray-500">Ranked by blind score</span>
+                <span className="text-xs text-gray-500">
+                  Ranked by blind score{result.failed_candidates ? ` · ${result.failed_candidates} skipped` : ''}
+                </span>
               </div>
               <div className="divide-y divide-gray-100">
                 {result.shortlist?.map((r: any, i: number) => (

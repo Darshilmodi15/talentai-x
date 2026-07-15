@@ -1,32 +1,39 @@
 import axios, { AxiosResponse, AxiosError } from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_URL || '/_/backend'
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '/_/backend')
 const API_KEY = import.meta.env.VITE_API_KEY || 'dev_key_change_in_production'
 
 export const api = axios.create({
   baseURL: `${API_BASE}/api/v1`,
+  timeout: 120_000,
   headers: {
     'X-API-Key': API_KEY,
   },
 })
 
+const normalizeApiError = (error: AxiosError<any>) => {
+  if (error.code === 'ECONNABORTED') return 'Request timed out. The AI service may be busy; please try again.'
+  if (!error.response) return 'Unable to connect to server. Make sure the backend is running.'
+
+  const data = error.response.data
+  if (typeof data?.message === 'string') return data.message
+  if (typeof data?.detail === 'string') return data.detail
+  if (Array.isArray(data?.detail)) {
+    return data.detail
+      .map((d: any) => {
+        const field = Array.isArray(d.loc) ? d.loc.filter((x: string) => x !== 'body').join('.') : ''
+        return `${field ? `${field}: ` : ''}${d.msg || 'Invalid value'}`
+      })
+      .join('; ')
+  }
+  if (typeof data === 'string') return data
+  if (error.response.status >= 500) return 'Server error. Please try again; if it repeats, check backend logs.'
+  return `Request failed (${error.response.status})`
+}
+
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
-  (error: AxiosError<{ message?: string; detail?: string }>) => {
-    let message = 'An error occurred'
-
-    if (!error.response) {
-      message = 'Unable to connect to server'
-    } else if (error.response.status === 429) {
-      message = error.response.data?.message || 'Resume analysis is temporarily unavailable. Please try again later.'
-    } else if (error.response.status >= 500) {
-      message = 'Server error'
-    } else {
-      message = error.response.data?.message || error.response.data?.detail || message
-    }
-
-    return Promise.reject(new Error(message))
-  }
+  (error: AxiosError<any>) => Promise.reject(new Error(normalizeApiError(error)))
 )
 
 // ── Parse ──────────────────────────────────────────────────────
