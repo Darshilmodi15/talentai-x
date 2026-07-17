@@ -252,7 +252,7 @@ def detect_ai_content(text: str) -> float:
         ai_prob = max(0.0, min(1.0, 1.0 - (burstiness / 0.5)))
         return round(ai_prob, 3)
     except Exception:
-        return 0.0
+        return 0.0      
 
 
 # ──────────────────────────────────────────────────────────────────
