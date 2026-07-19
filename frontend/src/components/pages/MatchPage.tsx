@@ -71,6 +71,17 @@ export default function MatchPage() {
         </p>
       </div>
 
+      {/* Warning Notice */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-amber-800">Matching Action Paused</p>
+          <p className="text-xs text-amber-700 mt-1">
+            This project is currently under review. Candidate matching is temporarily disabled. You can still select and explore candidates, but running new matches is paused.
+          </p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Input panel */}
         <div className="space-y-5">

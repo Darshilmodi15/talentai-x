@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useNavigate } from 'react-router-dom'
-import { Upload, FileText, CheckCircle, XCircle, Loader2, Eye } from 'lucide-react'
+import { Upload, FileText, CheckCircle, XCircle, Loader2, Eye, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { parseResume, getJobStatus } from '../../api/client'
 
@@ -123,6 +123,17 @@ export default function UploadPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Upload Resume</h1>
         <p className="text-gray-500 mt-1">PDF, DOCX, or TXT • Max 10MB per file</p>
+      </div>
+
+      {/* Warning Notice */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-amber-800">Upload Action Paused</p>
+          <p className="text-xs text-amber-700 mt-1">
+            This project is currently under review. Resume uploading and parsing is temporarily disabled. You can still explore the Candidates list and browse candidate profiles.
+          </p>
+        </div>
       </div>
 
       {/* Dropzone */}
