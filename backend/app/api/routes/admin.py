@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.db.database import get_db
 from app.db.models.models import APIKey, HITLReviewItem, MatchResult, Candidate, ParseJob
@@ -142,5 +142,5 @@ async def system_stats(
         "hitl_queue_pending": hitl_pending,
         "bias_flags_raised": bias_flagged,
         "system_status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
