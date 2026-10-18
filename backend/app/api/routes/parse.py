@@ -195,6 +195,8 @@ def sanitize_job_error(error: Optional[str]) -> Optional[str]:
     """
     if not error:
         return None
+    if not isinstance(error, str):
+        return "Resume parsing failed due to an internal server error. Please try again."
     lower = error.lower()
     if (
         "permissiondenied" in lower
@@ -216,7 +218,12 @@ def sanitize_job_error(error: Optional[str]) -> Optional[str]:
 
 
 def job_status_value(status: ProcessingStatus | str) -> str:
-    return status.value if isinstance(status, ProcessingStatus) else str(status)
+    value = status.value if isinstance(status, ProcessingStatus) else str(status)
+    return value.removeprefix("ProcessingStatus.").lower()
+
+
+def isoformat_or_empty(value: object) -> str:
+    return value.isoformat() if hasattr(value, "isoformat") else str(value or "")
 
 
 @router.post(
@@ -397,7 +404,10 @@ async def get_job_status(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if job.status == ProcessingStatus.FAILED and job.error_message and "Gemini quota exceeded" in job.error_message:
+    status_value = job_status_value(job.status)
+    is_failed = status_value == ProcessingStatus.FAILED.value
+
+    if is_failed and job.error_message and "Gemini quota exceeded" in str(job.error_message):
         return JSONResponse(
             status_code=429,
             content={
@@ -407,7 +417,7 @@ async def get_job_status(
             }
         )
 
-    if job.status == ProcessingStatus.FAILED and job.error_message and "Gemini model not found" in job.error_message:
+    if is_failed and job.error_message and "Gemini model not found" in str(job.error_message):
         return JSONResponse(
             status_code=404,
             content={
@@ -417,7 +427,7 @@ async def get_job_status(
             }
         )
 
-    if job.status == ProcessingStatus.FAILED and job.error_message and "Gemini JSON format invalid" in job.error_message:
+    if is_failed and job.error_message and "Gemini JSON format invalid" in str(job.error_message):
         return JSONResponse(
             status_code=500,
             content={
@@ -427,8 +437,8 @@ async def get_job_status(
             }
         )
 
-    if job.status == ProcessingStatus.FAILED and job.error_message and any(
-        token in job.error_message.lower() for token in ["permissiondenied", "permission denied", "denied access", "403"]
+    if is_failed and job.error_message and any(
+        token in str(job.error_message).lower() for token in ["permissiondenied", "permission denied", "denied access", "403"]
     ):
         return JSONResponse(
             status_code=403,
@@ -447,7 +457,7 @@ async def get_job_status(
     ai_prob = None
     skills_count = None
 
-    if job.status in [ProcessingStatus.COMPLETED, ProcessingStatus.PARTIAL]:
+    if status_value in {ProcessingStatus.COMPLETED.value, ProcessingStatus.PARTIAL.value}:
         from sqlalchemy import select
         result = await db.execute(
             select(Candidate).where(Candidate.parse_job_id == job_uuid)
@@ -458,16 +468,17 @@ async def get_job_status(
             parse_confidence = candidate.parse_confidence
             lang = candidate.resume_language
             ai_prob = candidate.ai_content_probability
-            skills_count = len(candidate.skills_canonical or [])
-            parsed = candidate.parsed_data or {}
-            layout = parsed.get("layout_type")
+            skills = candidate.skills_canonical
+            skills_count = len(skills) if isinstance(skills, (list, tuple, set, dict)) else None
+            parsed = candidate.parsed_data
+            layout = parsed.get("layout_type") if isinstance(parsed, dict) else None
 
     return JobStatusResponse(
         job_id=job_id,
         status=job_status_value(job.status),
         file_name=job.file_name,
-        created_at=job.created_at.isoformat() if job.created_at else "",
-        completed_at=job.completed_at.isoformat() if job.completed_at else None,
+        created_at=isoformat_or_empty(job.created_at),
+        completed_at=isoformat_or_empty(job.completed_at) if job.completed_at else None,
         candidate_id=candidate_id,
         parse_confidence=parse_confidence,
         layout_detected=layout,
