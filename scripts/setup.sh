@@ -20,7 +20,11 @@ echo ""
 # ── Step 1: Check prerequisites ──────────────────────────────────
 echo -e "${YELLOW}[1/7] Checking prerequisites...${NC}"
 
-command -v python3 >/dev/null 2>&1 || { echo -e "${RED}Python 3.12+ required${NC}"; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo -e "${RED}Python 3.12 required${NC}"; exit 1; }
+python3 -c 'import sys; raise SystemExit(sys.version_info[:2] != (3, 12))' || {
+    echo -e "${RED}Python 3.12 is required because the pinned native dependencies do not support Python 3.14 yet${NC}"
+    exit 1
+}
 command -v node >/dev/null 2>&1 || { echo -e "${RED}Node.js 20+ required${NC}"; exit 1; }
 command -v docker >/dev/null 2>&1 || { echo -e "${RED}Docker required${NC}"; exit 1; }
 command -v docker-compose >/dev/null 2>&1 || command -v "docker compose" >/dev/null 2>&1 || { echo -e "${RED}Docker Compose required${NC}"; exit 1; }
@@ -41,7 +45,7 @@ if [ ! -f .env ]; then
 fi
 
 # Validate API key is set
-if grep -q "your_gemini_api_key_here" .env 2>/dev/null; then
+if grep -Eq "your_gemini_api_key_here|replace_with_your_gemini_api_key" .env 2>/dev/null; then
     echo -e "${RED}ERROR: GEMINI_API_KEY not set in .env${NC}"
     exit 1
 fi

@@ -1,7 +1,6 @@
 import axios, { AxiosResponse, AxiosError } from 'axios'
-import toast from 'react-hot-toast'
 
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '/_/backend')
+const API_BASE = import.meta.env.VITE_API_URL || ''
 const API_KEY = import.meta.env.VITE_API_KEY || 'dev_key_change_in_production'
 
 export const api = axios.create({
@@ -208,137 +207,115 @@ const MOCK_SKILLS: Record<string, any> = {
 // ── Parse ──────────────────────────────────────────────────────
 
 export const parseResume = async (file: File): Promise<any> => {
-  throw new Error("Project is under review: Resume uploading is temporarily disabled.")
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await api.post('/parse', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
 }
 
 export const parseBatch = async (files: File[]): Promise<any> => {
-  throw new Error("Project is under review: Batch resume uploading is temporarily disabled.")
+  const formData = new FormData()
+  files.forEach((file) => formData.append('files', file))
+  const { data } = await api.post('/parse/batch', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
 }
 
 export const getJobStatus = async (jobId: string): Promise<any> => {
-  return { status: 'failed', error_message: 'Project is under review' }
+  const { data } = await api.get(`/jobs/${jobId}`)
+  return data
 }
 
 export const getJobTrace = async (jobId: string): Promise<any> => {
-  return []
+  const { data } = await api.get(`/jobs/${jobId}/trace`)
+  return data
 }
 
 // ── Candidates ─────────────────────────────────────────────────
 
 export const listCandidates = async (page = 1, search = ''): Promise<any> => {
-  toast.success("Loaded demo profiles (API offline / under review)", {
-    id: "demo-candidates-toast",
-    duration: 4000
-  })
-
-  let filtered = [...MOCK_CANDIDATES]
-  if (search) {
-    const q = search.toLowerCase()
-    filtered = filtered.filter(c => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q))
-  }
-
-  return {
-    candidates: filtered,
-    total: filtered.length
-  }
+  const { data } = await api.get('/candidates', { params: { page, search: search || undefined } })
+  return data
 }
 
 export const getCandidate = async (id: string): Promise<any> => {
-  const cand = MOCK_CANDIDATES.find(c => c.id === id) || MOCK_CANDIDATES[0]
-  return cand
+  const { data } = await api.get(`/candidates/${id}`)
+  return data
 }
 
 export const getCandidateSkills = async (id: string): Promise<any> => {
-  return MOCK_SKILLS[id] || MOCK_SKILLS["cand-1"]
+  const { data } = await api.get(`/candidates/${id}/skills`)
+  return data
 }
 
 export const getCandidateMatches = async (id: string): Promise<any> => {
-  return []
+  const { data } = await api.get(`/candidates/${id}/matches`)
+  return data
 }
 
 // ── Match ──────────────────────────────────────────────────────
 
 export const matchCandidate = async (candidateId: string, jobDescription: string): Promise<any> => {
-  throw new Error("Project is under review: Candidate matching is temporarily disabled.")
+  const { data } = await api.post('/match', {
+    candidate_id: candidateId,
+    job_description: jobDescription,
+  })
+  return data
 }
 
 export const batchMatch = async (candidateIds: string[], jobDescription: string, topN = 10): Promise<any> => {
-  throw new Error("Project is under review: Batch matching is temporarily disabled.")
+  const { data } = await api.post('/match/batch', {
+    candidate_ids: candidateIds,
+    job_description: jobDescription,
+    top_n: topN,
+  })
+  return data
 }
 
 export const runBiasAudit = async (jobDescription: string): Promise<any> => {
-  throw new Error("Project is under review: Bias audit is temporarily disabled.")
+  const { data } = await api.post('/match/bias-audit', null, {
+    params: { job_description: jobDescription },
+  })
+  return data
 }
 
 // ── Taxonomy ───────────────────────────────────────────────────
 
 export const browseTaxonomy = async (category?: string, page = 1): Promise<any> => {
-  toast.success("Loaded demo skill taxonomy (API offline / under review)", {
-    id: "demo-taxonomy-toast",
-    duration: 4000
+  const { data } = await api.get('/skills/taxonomy', {
+    params: { category, page },
   })
-
-  const skills = [
-    { canonical_name: "React", category: "technical", frequency: 142 },
-    { canonical_name: "Python", category: "technical", frequency: 118 },
-    { canonical_name: "TypeScript", category: "technical", frequency: 95 },
-    { canonical_name: "Docker", category: "technical", frequency: 84 },
-    { canonical_name: "Kubernetes", category: "technical", frequency: 53 },
-    { canonical_name: "PostgreSQL", category: "technical", frequency: 72 },
-    { canonical_name: "PyTorch", category: "technical", frequency: 41 }
-  ]
-
-  return {
-    skills,
-    total: skills.length
-  }
+  return data
 }
 
 export const searchTaxonomy = async (q: string): Promise<any> => {
-  return {
-    results: [],
-    total: 0
-  }
+  const { data } = await api.get('/skills/taxonomy/search', { params: { q } })
+  return data
 }
 
 export const getEmergingSkills = async (): Promise<any> => {
-  return {
-    count: 3,
-    emerging_skills: [
-      { id: "1", raw_skill: "LangChain", occurrences: 12, first_seen: "2026-01-01", status: "pending" },
-      { id: "2", raw_skill: "Vector Databases", occurrences: 8, first_seen: "2026-02-01", status: "pending" },
-      { id: "3", raw_skill: "Next.js 14", occurrences: 5, first_seen: "2026-03-01", status: "pending" }
-    ]
-  }
+  const { data } = await api.get('/skills/taxonomy/emerging')
+  return data
 }
 
 // ── Admin ──────────────────────────────────────────────────────
 
 export const getSystemStats = async (): Promise<any> => {
-  return {
-    total_candidates_parsed: 3,
-    total_parse_jobs: 14,
-    total_matches_run: 84,
-    hitl_queue_pending: 1,
-    bias_flags_raised: 2
-  }
+  const { data } = await api.get('/admin/stats')
+  return data
 }
 
 export const getHITLQueue = async (): Promise<any> => {
-  return {
-    pending_count: 1,
-    items: [
-      {
-        id: "hitl-1",
-        priority: "high",
-        expires_at: new Date(Date.now() + 86400000 * 3).toISOString(),
-        match_result_id: "match-12345",
-        trigger_reason: "High gender bias flag detected on Blind Scoring audit"
-      }
-    ]
-  }
+  const { data } = await api.get('/admin/hitl-queue')
+  return data
 }
 
 export const resolveHITLItem = async (itemId: string, decision: string, notes = ''): Promise<any> => {
-  throw new Error("Project is under review: Admin decisions are temporarily disabled.")
+  const { data } = await api.post(`/admin/hitl-queue/${itemId}/resolve`, null, {
+    params: { decision, notes },
+  })
+  return data
 }
