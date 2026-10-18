@@ -1,6 +1,9 @@
 import axios, { AxiosResponse, AxiosError } from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_URL || ''
+const configuredApiBase = import.meta.env.VITE_API_URL?.trim()
+const API_BASE = configuredApiBase || (
+  import.meta.env.PROD ? 'https://talentai-x-backend.onrender.com' : ''
+)
 let accessToken: string | null = null
 
 export const setAccessToken = (token: string | null) => {
