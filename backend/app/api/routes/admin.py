@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from app.db.database import get_db
 from app.db.models.models import APIKey, HITLReviewItem, MatchResult, Candidate, ParseJob
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import require_admin, AuthenticatedUser
 
 router = APIRouter()
 
@@ -25,13 +25,13 @@ class CreateAPIKeyRequest(BaseModel):
 async def create_api_key(
     body: CreateAPIKeyRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(require_admin),
 ):
     """Creates a new API key. The raw key is shown ONCE — store it securely."""
     raw_key = f"tai_{secrets.token_urlsafe(32)}"
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
 
-    api_key = APIKey(name=body.name, key_hash=key_hash)
+    api_key = APIKey(name=body.name, key_hash=key_hash, user_id=current_user.id)
     db.add(api_key)
     await db.commit()
 
@@ -46,7 +46,7 @@ async def create_api_key(
 @router.get("/admin/api-keys", summary="List all API keys", tags=["Admin"])
 async def list_api_keys(
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(require_admin),
 ):
     result = await db.execute(select(APIKey).order_by(APIKey.created_at.desc()))
     keys = result.scalars().all()
@@ -64,7 +64,7 @@ async def list_api_keys(
 @router.get("/admin/hitl-queue", summary="Get HITL review queue", tags=["Admin"])
 async def get_hitl_queue(
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(require_admin),
 ):
     result = await db.execute(
         select(HITLReviewItem)
@@ -95,7 +95,7 @@ async def resolve_hitl_item(
     decision: str,
     notes: str = "",
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(require_admin),
 ):
     try:
         item_uuid = uuid.UUID(item_id)
@@ -121,7 +121,7 @@ async def resolve_hitl_item(
 @router.get("/admin/stats", summary="System statistics", tags=["Admin"])
 async def system_stats(
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(require_admin),
 ):
     total_candidates = await db.scalar(select(func.count()).select_from(Candidate))
     total_jobs = await db.scalar(select(func.count()).select_from(ParseJob))

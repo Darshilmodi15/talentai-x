@@ -1,14 +1,74 @@
-import axios, { AxiosResponse, AxiosError } from 'axios'
+import axios, { AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
-const API_KEY = import.meta.env.VITE_API_KEY || 'dev_key_change_in_production'
+const API_KEY = import.meta.env.VITE_API_KEY || ''
+
+/**
+ * Retrieve the current Supabase or custom JWT access token.
+ */
+export const getAuthToken = (): string | null => {
+  if (typeof window === 'undefined') return null
+
+  // 1. Check explicit local token storage
+  const explicit = localStorage.getItem('talentai_auth_token')
+  if (explicit) return explicit
+
+  // 2. Discover Supabase auth token stored in localStorage (sb-<project-ref>-auth-token)
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '{}')
+        if (parsed?.access_token) return parsed.access_token
+      } catch {
+        // ignore JSON parse errors
+      }
+    }
+  }
+
+  return null
+}
+
+export const setAuthToken = (token: string | null): void => {
+  if (typeof window === 'undefined') return
+  if (token) {
+    localStorage.setItem('talentai_auth_token', token)
+  } else {
+    localStorage.removeItem('talentai_auth_token')
+  }
+}
+
+/**
+ * Check whether the current session is running in local UI demo mode.
+ */
+export const isDemoMode = (): boolean => {
+  if (typeof window === 'undefined') return false
+  return localStorage.getItem('talentai_demo_mode') === 'true'
+}
+
+export const setDemoMode = (enabled: boolean): void => {
+  if (typeof window === 'undefined') return
+  if (enabled) {
+    localStorage.setItem('talentai_demo_mode', 'true')
+  } else {
+    localStorage.removeItem('talentai_demo_mode')
+  }
+}
 
 export const api = axios.create({
   baseURL: `${API_BASE}/api/v1`,
   timeout: 120_000,
-  headers: {
-    'X-API-Key': API_KEY,
-  },
+})
+
+// Attach Bearer token or API key to outgoing requests
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const token = getAuthToken()
+  if (token) {
+    config.headers.set('Authorization', `Bearer ${token}`)
+  } else if (API_KEY) {
+    config.headers.set('X-API-Key', API_KEY)
+  }
+  return config
 })
 
 const normalizeApiError = (error: AxiosError<any>) => {
@@ -27,6 +87,8 @@ const normalizeApiError = (error: AxiosError<any>) => {
       .join('; ')
   }
   if (typeof data === 'string') return data
+  if (error.response.status === 401) return 'Unauthorized. Please sign in or provide valid credentials.'
+  if (error.response.status === 403) return 'Forbidden. Your account does not have permission for this action.'
   if (error.response.status >= 500) return 'Server error. Please try again; if it repeats, check backend logs.'
   return `Request failed (${error.response.status})`
 }
@@ -237,21 +299,49 @@ export const getJobTrace = async (jobId: string): Promise<any> => {
 // ── Candidates ─────────────────────────────────────────────────
 
 export const listCandidates = async (page = 1, search = ''): Promise<any> => {
+  if (isDemoMode()) {
+    const filtered = search
+      ? MOCK_CANDIDATES.filter(
+          (c) =>
+            c.name.toLowerCase().includes(search.toLowerCase()) ||
+            c.email.toLowerCase().includes(search.toLowerCase())
+        )
+      : MOCK_CANDIDATES
+    return {
+      total: filtered.length,
+      page,
+      page_size: 20,
+      candidates: filtered,
+    }
+  }
   const { data } = await api.get('/candidates', { params: { page, search: search || undefined } })
   return data
 }
 
 export const getCandidate = async (id: string): Promise<any> => {
+  if (isDemoMode()) {
+    return MOCK_CANDIDATES.find((c) => c.id === id) || MOCK_CANDIDATES[0]
+  }
   const { data } = await api.get(`/candidates/${id}`)
   return data
 }
 
 export const getCandidateSkills = async (id: string): Promise<any> => {
+  if (isDemoMode()) {
+    return MOCK_SKILLS[id] || MOCK_SKILLS['cand-1']
+  }
   const { data } = await api.get(`/candidates/${id}/skills`)
   return data
 }
 
 export const getCandidateMatches = async (id: string): Promise<any> => {
+  if (isDemoMode()) {
+    return {
+      candidate_id: id,
+      total_matches: 0,
+      matches: [],
+    }
+  }
   const { data } = await api.get(`/candidates/${id}/matches`)
   return data
 }
@@ -259,6 +349,22 @@ export const getCandidateMatches = async (id: string): Promise<any> => {
 // ── Match ──────────────────────────────────────────────────────
 
 export const matchCandidate = async (candidateId: string, jobDescription: string): Promise<any> => {
+  if (isDemoMode()) {
+    return {
+      match_score: 0.88,
+      blind_score: 0.91,
+      bias_delta: -0.03,
+      bias_flagged: false,
+      required_skill_coverage: 0.85,
+      skill_gaps: ['Docker', 'Kubernetes'],
+      upskilling_suggestions: { Docker: 'Complete Docker Essentials', Kubernetes: 'CKA certification track' },
+      interview_questions: { technical: ['Explain React fiber architecture and reconciliation.'] },
+      cot_reasoning: 'Demo evaluation: candidate demonstrates strong foundation with minor skill gap in container orchestration.',
+      summary: 'Well-rounded senior frontend candidate.',
+      shap_values: { skills: 0.55, experience: 0.3, education: 0.15 },
+      hitl_required: false,
+    }
+  }
   const { data } = await api.post('/match', {
     candidate_id: candidateId,
     job_description: jobDescription,
@@ -267,6 +373,25 @@ export const matchCandidate = async (candidateId: string, jobDescription: string
 }
 
 export const batchMatch = async (candidateIds: string[], jobDescription: string, topN = 10): Promise<any> => {
+  if (isDemoMode()) {
+    return {
+      total_candidates: candidateIds.length,
+      failed_candidates: 0,
+      failures: [],
+      job_description_preview: jobDescription.slice(0, 100) + '...',
+      ranking_method: 'blind_score',
+      shortlist: MOCK_CANDIDATES.map((c) => ({
+        candidate_id: c.id,
+        name: c.name,
+        match_score: 0.88,
+        blind_score: 0.9,
+        bias_flagged: false,
+        required_skill_coverage: 0.85,
+        skill_gaps: ['Kubernetes'],
+        recommendation: 'Strong candidate for interview',
+      })).slice(0, topN),
+    }
+  }
   const { data } = await api.post('/match/batch', {
     candidate_ids: candidateIds,
     job_description: jobDescription,

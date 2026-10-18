@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.db.models.models import SkillTaxonomy, EmergingSkill
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import get_current_user, require_admin, AuthenticatedUser
 
 router = APIRouter()
 
@@ -30,7 +30,7 @@ async def browse_taxonomy(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     stmt = select(SkillTaxonomy).order_by(SkillTaxonomy.category, SkillTaxonomy.name)
     total_stmt = select(func.count()).select_from(SkillTaxonomy)
@@ -73,7 +73,7 @@ async def browse_taxonomy(
 async def search_taxonomy(
     q: str = Query(..., min_length=2, description="Search query"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     stmt = select(SkillTaxonomy).where(
         SkillTaxonomy.name.ilike(f"%{q}%") |
@@ -104,7 +104,7 @@ async def search_taxonomy(
 )
 async def get_categories(
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     result = await db.execute(
         select(SkillTaxonomy.category, func.count(SkillTaxonomy.id))
@@ -124,7 +124,7 @@ async def get_categories(
 async def list_emerging_skills(
     status: str = Query("pending", description="Filter: pending, approved, rejected"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     result = await db.execute(
         select(EmergingSkill)
@@ -166,7 +166,7 @@ class ApproveSkillRequest(BaseModel):
 async def approve_emerging_skill(
     body: ApproveSkillRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(require_admin),
 ):
     import uuid
     try:

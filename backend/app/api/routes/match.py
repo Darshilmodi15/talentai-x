@@ -16,7 +16,7 @@ from slowapi.util import get_remote_address
 
 from app.db.database import get_db
 from app.db.models.models import Candidate, Job, MatchResult, MatchStatus, HITLReviewItem
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import get_current_user, require_recruiter_or_admin, AuthenticatedUser
 from app.agents.match_agent import match_agent, MatchAgentError
 from app.core.pipeline_state import PipelineState
 from app.core.config import settings
@@ -151,7 +151,7 @@ async def match_candidate(
     request: Request,
     body: MatchRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     import logging
     import traceback
@@ -165,6 +165,8 @@ async def match_candidate(
         cand_uuid = uuid.UUID(body.candidate_id)
         candidate = await db.get(Candidate, cand_uuid)
         if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        if not current_user.is_admin and candidate.user_id is not None and candidate.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="Candidate not found")
         logger.info("STEP 2: candidate loaded")
     except HTTPException:
@@ -232,6 +234,7 @@ async def match_candidate(
                 title="Unspecified",
                 description=body.job_description,
                 required_skills=state.get("skill_gaps", []),
+                user_id=current_user.id,
             )
             db.add(job)
             await db.flush()
@@ -241,6 +244,7 @@ async def match_candidate(
                 else MatchStatus.AUTO_MERGED
             )
             match_result = MatchResult(
+                user_id=current_user.id,
                 candidate_id=cand_uuid,
                 job_id=job.id,
                 match_score=state["match_score"],
@@ -344,7 +348,7 @@ async def batch_match(
     request: Request,
     body: BatchMatchRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(require_recruiter_or_admin),
 ):
     results = []
     failures = []
@@ -354,6 +358,10 @@ async def batch_match(
             cand_uuid = uuid.UUID(cand_id_str)
             candidate = await db.get(Candidate, cand_uuid)
             if not candidate:
+                failures.append({"candidate_id": cand_id_str, "error": "Candidate not found"})
+                continue
+
+            if not current_user.is_admin and candidate.user_id is not None and candidate.user_id != current_user.id:
                 failures.append({"candidate_id": cand_id_str, "error": "Candidate not found"})
                 continue
 
@@ -401,7 +409,7 @@ Returns bias_score < 0.05 = FAIR, ≥ 0.05 = FLAGGED.
 async def bias_audit(
     request: Request,
     job_description: str,
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(require_recruiter_or_admin),
 ):
     """
     Simplified bias audit:

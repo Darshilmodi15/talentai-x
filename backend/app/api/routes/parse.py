@@ -19,7 +19,7 @@ from slowapi.util import get_remote_address
 
 from app.db.database import get_db
 from app.db.models.models import ParseJob, ProcessingStatus, Candidate, Experience, Education
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import get_current_user, AuthenticatedUser
 from app.agents.orchestrator import run_parse_pipeline
 from app.core.config import settings
 from app.services.candidate_service import save_candidate_from_state
@@ -116,7 +116,7 @@ async def process_resume_task(
                 )
             else:
                 # ── COMPLETED or PARTIAL: Save candidate ──
-                candidate_id = await save_candidate_from_state(state, job_id, db)
+                candidate_id = await save_candidate_from_state(state, job_id, db, user_id=job.user_id)
                 state["candidate_id"] = str(candidate_id)
 
                 job.status = (
@@ -193,7 +193,7 @@ async def parse_resume(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Resume file (PDF, DOCX, or TXT)"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     # Validate file type
     content_type = file.content_type or ""
@@ -226,6 +226,7 @@ async def parse_resume(
     job_id = str(uuid.uuid4())
     job = ParseJob(
         id=uuid.UUID(job_id),
+        user_id=current_user.id,
         status=ProcessingStatus.QUEUED,
         file_name=file.filename or "upload",
         file_type=file_type,
@@ -267,7 +268,7 @@ async def parse_batch(
     background_tasks: BackgroundTasks,
     files: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     if len(files) > 50:
         raise HTTPException(status_code=400, detail="Max 50 files per batch")
@@ -290,6 +291,7 @@ async def parse_batch(
 
         job = ParseJob(
             id=uuid.UUID(job_id),
+            user_id=current_user.id,
             status=ProcessingStatus.QUEUED,
             file_name=file.filename or "upload",
             file_type=file_type,
@@ -329,7 +331,7 @@ async def parse_batch(
 async def get_job_status(
     job_id: str,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
         job_uuid = uuid.UUID(job_id)
@@ -338,6 +340,9 @@ async def get_job_status(
 
     job = await db.get(ParseJob, job_uuid)
     if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not current_user.is_admin and job.user_id is not None and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status == ProcessingStatus.FAILED and job.error_message and "Gemini quota exceeded" in job.error_message:
@@ -430,7 +435,7 @@ async def get_job_status(
 async def get_job_trace(
     job_id: str,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
         job_uuid = uuid.UUID(job_id)
@@ -439,6 +444,9 @@ async def get_job_trace(
 
     job = await db.get(ParseJob, job_uuid)
     if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not current_user.is_admin and job.user_id is not None and job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Job not found")
 
     traces = job.traces or []

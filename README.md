@@ -105,62 +105,68 @@ cd frontend && npm run dev
 
 ---
 
-## API Reference
+## Authentication & Role-Based Access Control (RBAC)
 
-All endpoints require `X-API-Key` header.  
-Dev key: `dev_key_change_in_production`
+TalentAI-X protects all routes using **Supabase JWT validation** with server-side role management in `user_profiles` and strict ownership scoping to eliminate Insecure Direct Object References (IDOR):
+
+- **Authentication Header**: `Authorization: Bearer <supabase_jwt_access_token>` (or `X-API-Key` for provisioned service keys).
+- **Roles & Permissions**:
+  - `individual`: Can upload resumes, view their own parsed candidates, search saved jobs, and run individual matches.
+  - `recruiter`: Can perform batch candidate ranking, shortlists, and NYC Local Law 144 algorithmic bias audits.
+  - `admin`: Full system access, HITL review queue resolution, skill taxonomy approvals, system statistics, and API key provisioning.
+- **Ownership Scoping**: Candidates, saved jobs, parse jobs, and matches are strictly isolated by `user_id`. Non-admin accounts can only access records they own.
 
 ### Resume Parsing
 ```bash
-# Upload single resume
+# Upload single resume (authenticated)
 curl -X POST http://localhost:8000/api/v1/parse \
-  -H "X-API-Key: dev_key_change_in_production" \
+  -H "Authorization: Bearer $SUPABASE_JWT" \
   -F "file=@resume.pdf"
 # Returns: { "job_id": "uuid", "status": "queued" }
 
 # Poll status
 curl http://localhost:8000/api/v1/jobs/{job_id} \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 
 # Get agent trace
 curl http://localhost:8000/api/v1/jobs/{job_id}/trace \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 
 # Batch upload
 curl -X POST http://localhost:8000/api/v1/parse/batch \
-  -H "X-API-Key: dev_key_change_in_production" \
+  -H "Authorization: Bearer $SUPABASE_JWT" \
   -F "files=@resume1.pdf" -F "files=@resume2.docx"
 ```
 
 ### Candidate Intelligence
 ```bash
-# List candidates
+# List candidates (scoped to user)
 curl http://localhost:8000/api/v1/candidates \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 
-# Full profile
+# Full profile (with ownership validation)
 curl http://localhost:8000/api/v1/candidates/{id} \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 
 # Normalized skill profile
 curl http://localhost:8000/api/v1/candidates/{id}/skills \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 ```
 
 ### Matching
 ```bash
-# Match one candidate to JD
+# Match candidate to JD
 curl -X POST http://localhost:8000/api/v1/match \
-  -H "X-API-Key: dev_key_change_in_production" \
+  -H "Authorization: Bearer $SUPABASE_JWT" \
   -H "Content-Type: application/json" \
   -d '{
     "candidate_id": "uuid",
     "job_description": "Senior ML Engineer, Python, PyTorch required..."
   }'
 
-# Batch rank
+# Batch rank (recruiter or admin role required)
 curl -X POST http://localhost:8000/api/v1/match/batch \
-  -H "X-API-Key: dev_key_change_in_production" \
+  -H "Authorization: Bearer $SUPABASE_JWT" \
   -H "Content-Type: application/json" \
   -d '{
     "candidate_ids": ["uuid1", "uuid2"],
@@ -168,24 +174,24 @@ curl -X POST http://localhost:8000/api/v1/match/batch \
     "top_n": 10
   }'
 
-# Bias audit (NYC Local Law 144 compliance)
+# Bias audit (recruiter or admin role required - NYC Local Law 144 compliance)
 curl -X POST "http://localhost:8000/api/v1/match/bias-audit?job_description=..." \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 ```
 
 ### Skill Taxonomy
 ```bash
-# Browse
+# Browse taxonomy
 curl "http://localhost:8000/api/v1/skills/taxonomy?category=technical" \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 
-# Search
+# Search skills
 curl "http://localhost:8000/api/v1/skills/taxonomy/search?q=pytorch" \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 
-# Emerging skills (Agent 5 output)
+# Emerging skills (pending proposals)
 curl http://localhost:8000/api/v1/skills/taxonomy/emerging \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_JWT"
 ```
 
 ---

@@ -28,6 +28,31 @@ class MatchStatus(str, enum.Enum):
     UNRESOLVED = "unresolved"
 
 
+class UserRole(str, enum.Enum):
+    INDIVIDUAL = "individual"
+    RECRUITER = "recruiter"
+    ADMIN = "admin"
+
+
+# ──────────────────────────────────────────────────────────────────
+# User Profiles (Supabase Auth Identity & Server-Controlled Roles)
+# ──────────────────────────────────────────────────────────────────
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    role: Mapped[str] = mapped_column(String(20), default=UserRole.INDIVIDUAL.value, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    # Relationships
+    parse_jobs: Mapped[list["ParseJob"]] = relationship("ParseJob", back_populates="user")
+    candidates: Mapped[list["Candidate"]] = relationship("Candidate", back_populates="user")
+    jobs: Mapped[list["Job"]] = relationship("Job", back_populates="user")
+    match_results: Mapped[list["MatchResult"]] = relationship("MatchResult", back_populates="user")
+
+
 # ──────────────────────────────────────────────────────────────────
 # API Keys
 # ──────────────────────────────────────────────────────────────────
@@ -37,6 +62,7 @@ class APIKey(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("user_profiles.id"), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_used: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -49,6 +75,9 @@ class ParseJob(Base):
     __tablename__ = "parse_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user_profiles.id"), nullable=True, index=True
+    )
     status: Mapped[ProcessingStatus] = mapped_column(
         SAEnum(ProcessingStatus), default=ProcessingStatus.QUEUED
     )
@@ -60,8 +89,9 @@ class ParseJob(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     traces: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    # relationship
+    # relationships
     candidate: Mapped["Candidate | None"] = relationship("Candidate", back_populates="parse_job")
+    user: Mapped["UserProfile | None"] = relationship("UserProfile", back_populates="parse_jobs")
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -71,6 +101,9 @@ class Candidate(Base):
     __tablename__ = "candidates"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user_profiles.id"), nullable=True, index=True
+    )
     parse_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("parse_jobs.id"), nullable=False)
 
     # Basic Info
@@ -103,6 +136,7 @@ class Candidate(Base):
 
     # Relationships
     parse_job: Mapped["ParseJob"] = relationship("ParseJob", back_populates="candidate")
+    user: Mapped["UserProfile | None"] = relationship("UserProfile", back_populates="candidates")
     experiences: Mapped[list["Experience"]] = relationship("Experience", back_populates="candidate", cascade="all, delete-orphan")
     educations: Mapped[list["Education"]] = relationship("Education", back_populates="candidate", cascade="all, delete-orphan")
     match_results: Mapped[list["MatchResult"]] = relationship("MatchResult", back_populates="candidate")
@@ -145,6 +179,9 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user_profiles.id"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text)
     company: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -154,6 +191,7 @@ class Job(Base):
     parsed_requirements: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
+    user: Mapped["UserProfile | None"] = relationship("UserProfile", back_populates="jobs")
     match_results: Mapped[list["MatchResult"]] = relationship("MatchResult", back_populates="job")
 
 
@@ -164,6 +202,9 @@ class MatchResult(Base):
     __tablename__ = "match_results"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("user_profiles.id"), nullable=True, index=True
+    )
     candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id"))
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id"))
 
@@ -194,6 +235,7 @@ class MatchResult(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
+    user: Mapped["UserProfile | None"] = relationship("UserProfile", back_populates="match_results")
     candidate: Mapped["Candidate"] = relationship("Candidate", back_populates="match_results")
     job: Mapped["Job"] = relationship("Job", back_populates="match_results")
 

@@ -8,7 +8,7 @@ from typing import Optional
 
 from app.db.database import get_db
 from app.db.models.models import Job
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import get_current_user, AuthenticatedUser
 
 router = APIRouter()
 
@@ -24,13 +24,14 @@ class CreateJobRequest(BaseModel):
 async def create_job(
     body: CreateJobRequest,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     job = Job(
         title=body.title,
         description=body.description,
         company=body.company,
         experience_years_min=body.experience_years_min,
+        user_id=current_user.id,
     )
     db.add(job)
     await db.commit()
@@ -40,9 +41,13 @@ async def create_job(
 @router.get("/jobs", summary="List saved jobs")
 async def list_jobs(
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    result = await db.execute(select(Job).order_by(Job.created_at.desc()).limit(50))
+    stmt = select(Job).order_by(Job.created_at.desc()).limit(50)
+    if not current_user.is_admin:
+        stmt = stmt.where(Job.user_id == current_user.id)
+
+    result = await db.execute(stmt)
     jobs = result.scalars().all()
     return {
         "jobs": [
@@ -57,7 +62,7 @@ async def list_jobs(
 async def get_job(
     job_id: str,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
         job_uuid = uuid.UUID(job_id)
@@ -66,6 +71,10 @@ async def get_job(
     job = await db.get(Job, job_uuid)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    if not current_user.is_admin and job.user_id is not None and job.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Job not found")
+
     return {
         "id": str(job.id), "title": job.title,
         "description": job.description, "company": job.company,

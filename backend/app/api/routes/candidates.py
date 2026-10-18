@@ -15,7 +15,7 @@ from sqlalchemy import select, func
 
 from app.db.database import get_db
 from app.db.models.models import Candidate, MatchResult
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import get_current_user, AuthenticatedUser
 
 router = APIRouter()
 
@@ -29,11 +29,15 @@ async def list_candidates(
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None, description="Search by name or email"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     offset = (page - 1) * page_size
     stmt = select(Candidate).order_by(Candidate.created_at.desc())
     total_stmt = select(func.count()).select_from(Candidate)
+
+    if not current_user.is_admin:
+        stmt = stmt.where(Candidate.user_id == current_user.id)
+        total_stmt = total_stmt.where(Candidate.user_id == current_user.id)
 
     if search:
         search_filter = (
@@ -75,7 +79,7 @@ async def list_candidates(
 async def get_candidate(
     candidate_id: str,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
         cand_uuid = uuid.UUID(candidate_id)
@@ -84,6 +88,9 @@ async def get_candidate(
 
     candidate = await db.get(Candidate, cand_uuid)
     if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    if not current_user.is_admin and candidate.user_id is not None and candidate.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     parsed = candidate.parsed_data or {}
@@ -122,7 +129,7 @@ async def get_candidate_skills(
     include_inferred: bool = Query(True, description="Include skills inferred from the implication graph"),
     source_filter: Optional[str] = Query(None, description="Filter by source: resume, github, linkedin, inferred"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
         cand_uuid = uuid.UUID(candidate_id)
@@ -131,6 +138,9 @@ async def get_candidate_skills(
 
     candidate = await db.get(Candidate, cand_uuid)
     if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    if not current_user.is_admin and candidate.user_id is not None and candidate.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     skills = list(candidate.skills_canonical or [])
@@ -179,12 +189,19 @@ async def get_candidate_skills(
 async def get_candidate_matches(
     candidate_id: str,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
         cand_uuid = uuid.UUID(candidate_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid candidate_id")
+
+    candidate = await db.get(Candidate, cand_uuid)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    if not current_user.is_admin and candidate.user_id is not None and candidate.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Candidate not found")
 
     result = await db.execute(
         select(MatchResult)
@@ -221,7 +238,7 @@ async def get_candidate_matches(
 async def delete_candidate(
     candidate_id: str,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     try:
         cand_uuid = uuid.UUID(candidate_id)
@@ -230,6 +247,9 @@ async def delete_candidate(
 
     candidate = await db.get(Candidate, cand_uuid)
     if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    if not current_user.is_admin and candidate.user_id is not None and candidate.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     await db.delete(candidate)

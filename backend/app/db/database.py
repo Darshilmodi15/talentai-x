@@ -33,7 +33,74 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+from sqlalchemy import text
+import logging
+
+logger = logging.getLogger(__name__)
+
+SCHEMA_UPGRADE_STATEMENTS = [
+    """
+    CREATE TABLE IF NOT EXISTS user_profiles (
+        id UUID PRIMARY KEY,
+        email VARCHAR(255),
+        role VARCHAR(20) NOT NULL DEFAULT 'individual',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_user_profiles_email ON user_profiles(email);
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);
+    """,
+    """
+    ALTER TABLE parse_jobs
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_parse_jobs_user_id ON parse_jobs(user_id);
+    """,
+    """
+    ALTER TABLE candidates
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_candidates_user_id ON candidates(user_id);
+    """,
+    """
+    ALTER TABLE jobs
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id);
+    """,
+    """
+    ALTER TABLE match_results
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_match_results_user_id ON match_results(user_id);
+    """,
+    """
+    ALTER TABLE api_keys
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
+    """,
+]
+
+
 async def init_db():
-    """Create all tables on startup."""
+    """Create all tables on startup and apply incremental schema upgrades."""
+    # Ensure all models are registered in Base.metadata
+    from app.db.models import models  # noqa: F401
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        for stmt in SCHEMA_UPGRADE_STATEMENTS:
+            try:
+                await conn.execute(text(stmt.strip()))
+            except Exception as e:
+                logger.debug(f"Schema upgrade notice: {e}")

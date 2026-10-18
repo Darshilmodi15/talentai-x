@@ -113,22 +113,33 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* API info */}
+      {/* Authentication & Security Controls */}
       <div className="mt-8 bg-gray-50 border border-gray-200 rounded-xl p-5">
-        <h3 className="font-semibold text-gray-900 mb-3">API Access</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">Dev key:</code>
-            <code className="text-gray-600">dev_key_change_in_production</code>
+        <h3 className="font-semibold text-gray-900 mb-2">Access Control & Security</h3>
+        <p className="text-gray-600 text-xs mb-3">
+          TalentAI-X enforces server-side Role-Based Access Control (RBAC) via Supabase JWT Bearer authentication.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs mb-3">
+          <div className="bg-white p-3 rounded-lg border border-gray-200">
+            <span className="font-semibold text-gray-800">Individual:</span>
+            <p className="text-gray-500 mt-0.5">Scoped resume parsing, candidate profile views, and personal single-candidate matching.</p>
           </div>
-          <p className="text-gray-500 text-xs">
-            Set in .env as VITE_API_KEY. Create production keys via POST /api/v1/admin/api-keys.
-          </p>
+          <div className="bg-white p-3 rounded-lg border border-gray-200">
+            <span className="font-semibold text-gray-800">Recruiter:</span>
+            <p className="text-gray-500 mt-0.5">Batch candidate screening, ranking, shortlists, and NYC Local Law 144 algorithmic bias audits.</p>
+          </div>
+          <div className="bg-white p-3 rounded-lg border border-gray-200">
+            <span className="font-semibold text-gray-800">Admin:</span>
+            <p className="text-gray-500 mt-0.5">System metrics, HITL review queue resolution, taxonomy approvals, and API-key issuance.</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between text-xs text-gray-500 border-t border-gray-200 pt-3">
+          <span>Production keys can be provisioned via <code>POST /api/v1/admin/api-keys</code></span>
           <a
             href="http://localhost:8000/docs"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block text-indigo-600 text-xs hover:underline mt-2"
+            className="text-indigo-600 hover:underline inline-flex items-center gap-1"
           >
             Open Swagger UI →
           </a>
