@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_JWT_SECRET: str = ""
     SUPABASE_JWT_AUDIENCE: str = "authenticated"
+    SUPABASE_JWKS_URL: Optional[str] = None
     ALLOW_DEV_API_KEY: bool = False
     INDIVIDUAL_UPLOAD_LIMIT: int = 3
     RECRUITER_UPLOAD_LIMIT: int = 25
@@ -89,6 +90,8 @@ class Settings(BaseSettings):
     def build_database_urls(self):
         if not self.SUPABASE_URL and self.VITE_SUPABASE_URL:
             self.SUPABASE_URL = self.VITE_SUPABASE_URL
+        if not self.SUPABASE_JWKS_URL and self.SUPABASE_URL:
+            self.SUPABASE_JWKS_URL = f"{self.SUPABASE_URL.rstrip('/')}/auth/v1/.well-known/jwks.json"
 
         if not self.DATABASE_URL or not self.DATABASE_URL.startswith("postgresql"):
             self.DATABASE_URL = (

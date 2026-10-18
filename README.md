@@ -133,7 +133,7 @@ role key and demo passwords after running; never add them to Vercel or any
 | Environment | Required variables |
 |---|---|
 | Local root `.env` | `GEMINI_API_KEY`, database/Redis values, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` |
-| Render backend | `GEMINI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`, `SECRET_KEY`, and allowed-origin values |
+| Render backend | `GEMINI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET` (legacy HS256 projects), `SUPABASE_JWKS_URL` (current signing-key projects), `SUPABASE_JWT_AUDIENCE`, `SECRET_KEY`, and allowed-origin values |
 | Vercel frontend | `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` only |
 
 `SUPABASE_JWT_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` are backend/setup secrets.
