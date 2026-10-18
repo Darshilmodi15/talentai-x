@@ -14,12 +14,13 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Backgro
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.db.database import get_db
 from app.db.models.models import ParseJob, ProcessingStatus, Candidate, Experience, Education
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import CurrentUser
 from app.agents.orchestrator import run_parse_pipeline
 from app.core.config import settings
 from app.services.candidate_service import save_candidate_from_state
@@ -64,6 +65,7 @@ async def process_resume_task(
     file_bytes: bytes,
     file_name: str,
     file_type: str,
+    owner_user_id: str,
 ):
     """
     Background task: run pipeline and persist results.
@@ -116,7 +118,10 @@ async def process_resume_task(
                 )
             else:
                 # ── COMPLETED or PARTIAL: Save candidate ──
-                candidate_id = await save_candidate_from_state(state, job_id, db)
+                candidate_id = await save_candidate_from_state(
+                    state, job_id, db, uuid.UUID(owner_user_id)
+                )
+                await db.commit()
                 state["candidate_id"] = str(candidate_id)
 
                 job.status = (
@@ -159,7 +164,15 @@ def sanitize_job_error(error: Optional[str]) -> Optional[str]:
     if not error:
         return None
     lower = error.lower()
-    if "permissiondenied" in lower or "permission denied" in lower or "denied access" in lower or "403" in lower:
+    if (
+        "permissiondenied" in lower
+        or "permission denied" in lower
+        or "denied access" in lower
+        or "invalid api key" in lower
+        or "api key not valid" in lower
+        or "api_key_invalid" in lower
+        or "403" in lower
+    ):
         return "AI provider access denied. Please check the Gemini API key/project access."
     if "quota" in lower or "429" in lower or "resource exhausted" in lower:
         return "AI provider quota exceeded. Please try again later."
@@ -191,9 +204,9 @@ Returns a job_id immediately. Poll GET /api/v1/jobs/{job_id} for status.
 async def parse_resume(
     request: Request,
     background_tasks: BackgroundTasks,
+    user: CurrentUser,
     file: UploadFile = File(..., description="Resume file (PDF, DOCX, or TXT)"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     # Validate file type
     content_type = file.content_type or ""
@@ -230,6 +243,7 @@ async def parse_resume(
         file_name=file.filename or "upload",
         file_type=file_type,
         file_path=f"uploads/{job_id}.{file_type}",
+        owner_user_id=user.id,
     )
     db.add(job)
     await db.commit()
@@ -246,6 +260,7 @@ async def parse_resume(
         file_bytes=file_bytes,
         file_name=file.filename or "upload",
         file_type=file_type,
+        owner_user_id=str(user.id),
     )
 
     return ParseJobResponse(
@@ -265,9 +280,9 @@ async def parse_resume(
 async def parse_batch(
     request: Request,
     background_tasks: BackgroundTasks,
+    user: CurrentUser,
     files: list[UploadFile] = File(...),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     if len(files) > 50:
         raise HTTPException(status_code=400, detail="Max 50 files per batch")
@@ -294,6 +309,7 @@ async def parse_batch(
             file_name=file.filename or "upload",
             file_type=file_type,
             file_path=f"uploads/{job_id}.{file_type}",
+            owner_user_id=user.id,
         )
         db.add(job)
         job_ids.append(job_id)
@@ -308,6 +324,7 @@ async def parse_batch(
             file_bytes=file_bytes,
             file_name=file.filename or "upload",
             file_type=file_type,
+            owner_user_id=str(user.id),
         )
 
     await db.commit()
@@ -328,15 +345,17 @@ async def parse_batch(
 )
 async def get_job_status(
     job_id: str,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     try:
         job_uuid = uuid.UUID(job_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job_id format")
 
-    job = await db.get(ParseJob, job_uuid)
+    job = await db.scalar(
+        select(ParseJob).where(ParseJob.id == job_uuid, ParseJob.owner_user_id == user.id)
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -429,15 +448,17 @@ async def get_job_status(
 )
 async def get_job_trace(
     job_id: str,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     try:
         job_uuid = uuid.UUID(job_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job_id format")
 
-    job = await db.get(ParseJob, job_uuid)
+    job = await db.scalar(
+        select(ParseJob).where(ParseJob.id == job_uuid, ParseJob.owner_user_id == user.id)
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 

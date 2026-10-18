@@ -37,3 +37,28 @@ async def init_db():
     """Create all tables on startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        if engine.url.get_backend_name() == "postgresql":
+            await conn.exec_driver_sql(
+                "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS owner_user_id UUID"
+            )
+            await conn.exec_driver_sql(
+                "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS owner_user_id UUID"
+            )
+            await conn.exec_driver_sql(
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS owner_user_id UUID"
+            )
+            await conn.exec_driver_sql(
+                "ALTER TABLE match_results ADD COLUMN IF NOT EXISTS owner_user_id UUID"
+            )
+            await conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_parse_jobs_owner_user_id ON parse_jobs(owner_user_id)"
+            )
+            await conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_candidates_owner_user_id ON candidates(owner_user_id)"
+            )
+            await conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_jobs_owner_user_id ON jobs(owner_user_id)"
+            )
+            await conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_match_results_owner_user_id ON match_results(owner_user_id)"
+            )

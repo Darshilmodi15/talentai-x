@@ -64,7 +64,9 @@ The world's first bias-aware, explainable AI talent intelligence platform.
 - **HITL review queue** for borderline decisions
 
 ### Authentication
-All endpoints require `X-API-Key` header.
+All protected endpoints require a valid Supabase access token in the
+`Authorization: Bearer <token>` header. Roles are read from the server-side
+`user_profiles` table; frontend metadata and demo identities are not trusted.
 
 ### Compliance
 Built for NYC Local Law 144 and Colorado AI Act 2026.

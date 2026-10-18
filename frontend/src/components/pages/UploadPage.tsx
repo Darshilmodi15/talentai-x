@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { Upload, FileText, CheckCircle, XCircle, Loader2, Eye } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { parseResume, getJobStatus } from '../../api/client'
+import { useAuth } from '../../auth/AuthContext'
 
 type JobState = {
   jobId: string
@@ -18,6 +19,7 @@ type JobState = {
 
 export default function UploadPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [jobs, setJobs] = useState<JobState[]>([])
   const [uploading, setUploading] = useState(false)
 
@@ -62,6 +64,10 @@ export default function UploadPage() {
   }, [])
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    if (user?.isDemo) {
+      toast.error('Demo mode is UI-only. Sign in with a real account to parse files.')
+      return
+    }
     setUploading(true)
     for (const file of acceptedFiles) {
       try {
@@ -80,7 +86,7 @@ export default function UploadPage() {
       }
     }
     setUploading(false)
-  }, [pollJob])
+  }, [pollJob, user?.isDemo])
 
   const retryJob = useCallback((job: JobState) => {
     if (!job.file) return
@@ -90,6 +96,7 @@ export default function UploadPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    disabled: Boolean(user?.isDemo),
     accept: {
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
@@ -124,6 +131,14 @@ export default function UploadPage() {
         <h1 className="text-2xl font-bold text-gray-900">Upload Resume</h1>
         <p className="text-gray-500 mt-1">PDF, DOCX, or TXT • Max 10MB per file</p>
       </div>
+      {user?.isDemo && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          You are viewing the recruiter demo. File parsing is disabled in demo mode so it cannot access production data.
+          <button onClick={() => navigate('/login?role=recruiter')} className="ml-2 font-semibold underline">
+            Sign in to parse resumes
+          </button>
+        </div>
+      )}
 
       {/* Dropzone */}
       <div

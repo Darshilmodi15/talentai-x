@@ -16,7 +16,7 @@ from slowapi.util import get_remote_address
 
 from app.db.database import get_db
 from app.db.models.models import Candidate, Job, MatchResult, MatchStatus, HITLReviewItem
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import CurrentUser, RecruiterUser
 from app.agents.match_agent import match_agent, MatchAgentError
 from app.core.pipeline_state import PipelineState
 from app.core.config import settings
@@ -150,8 +150,8 @@ Returns:
 async def match_candidate(
     request: Request,
     body: MatchRequest,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     import logging
     import traceback
@@ -163,7 +163,9 @@ async def match_candidate(
     logger.info("Loading candidate")
     try:
         cand_uuid = uuid.UUID(body.candidate_id)
-        candidate = await db.get(Candidate, cand_uuid)
+        candidate = await db.scalar(
+            select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+        )
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
         logger.info("STEP 2: candidate loaded")
@@ -229,6 +231,7 @@ async def match_candidate(
         try:
             # Save or find job
             job = Job(
+                owner_user_id=user.id,
                 title="Unspecified",
                 description=body.job_description,
                 required_skills=state.get("skill_gaps", []),
@@ -241,6 +244,7 @@ async def match_candidate(
                 else MatchStatus.AUTO_MERGED
             )
             match_result = MatchResult(
+                owner_user_id=user.id,
                 candidate_id=cand_uuid,
                 job_id=job.id,
                 match_score=state["match_score"],
@@ -343,8 +347,8 @@ async def match_candidate(
 async def batch_match(
     request: Request,
     body: BatchMatchRequest,
+    user: RecruiterUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     results = []
     failures = []
@@ -352,7 +356,9 @@ async def batch_match(
     for cand_id_str in body.candidate_ids:
         try:
             cand_uuid = uuid.UUID(cand_id_str)
-            candidate = await db.get(Candidate, cand_uuid)
+            candidate = await db.scalar(
+                select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+            )
             if not candidate:
                 failures.append({"candidate_id": cand_id_str, "error": "Candidate not found"})
                 continue
@@ -401,7 +407,7 @@ Returns bias_score < 0.05 = FAIR, ≥ 0.05 = FLAGGED.
 async def bias_audit(
     request: Request,
     job_description: str,
-    _: str = Depends(verify_api_key),
+    user: RecruiterUser,
 ):
     """
     Simplified bias audit:

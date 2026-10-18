@@ -13,6 +13,7 @@ async def save_candidate_from_state(
     state: PipelineState,
     job_id: str,
     db: AsyncSession,
+    owner_user_id: uuid.UUID,
 ) -> uuid.UUID:
     """
     Take the completed pipeline state and persist everything to the DB.
@@ -47,6 +48,7 @@ async def save_candidate_from_state(
     # Main candidate record
     candidate = Candidate(
         id=candidate_id,
+        owner_user_id=owner_user_id,
         parse_job_id=uuid.UUID(job_id),
         name=parsed.get("name"),
         email=parsed.get("email"),

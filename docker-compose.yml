@@ -10,7 +10,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U talentai"]
+      test: ["CMD-SHELL", "pg_isready -U talentai -d talentai_db"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -52,6 +52,9 @@ services:
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_JWT_AUDIENCE: ${SUPABASE_JWT_AUDIENCE:-authenticated}
       SECRET_KEY: ${SECRET_KEY:-replace_me}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     depends_on:
@@ -80,6 +83,9 @@ services:
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
       GEMINI_API_KEY: ${GEMINI_API_KEY}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_JWT_AUDIENCE: ${SUPABASE_JWT_AUDIENCE:-authenticated}
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,9 +102,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
       VITE_API_URL: http://localhost:8000
-      VITE_API_KEY: ${VITE_API_KEY:-dev_key_change_in_production}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     volumes:
       - ./frontend:/app
       - /app/node_modules

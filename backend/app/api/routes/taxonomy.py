@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.db.models.models import SkillTaxonomy, EmergingSkill
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import CurrentUser, RecruiterUser
 
 router = APIRouter()
 
@@ -25,12 +25,12 @@ router = APIRouter()
     description="Returns all skills in the taxonomy, optionally filtered by category or parent.",
 )
 async def browse_taxonomy(
+    user: CurrentUser,
     category: Optional[str] = Query(None, description="Filter: technical, soft, domain"),
     parent: Optional[str] = Query(None, description="Filter by parent skill"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     stmt = select(SkillTaxonomy).order_by(SkillTaxonomy.category, SkillTaxonomy.name)
     total_stmt = select(func.count()).select_from(SkillTaxonomy)
@@ -71,9 +71,9 @@ async def browse_taxonomy(
     summary="Search skill taxonomy",
 )
 async def search_taxonomy(
+    user: CurrentUser,
     q: str = Query(..., min_length=2, description="Search query"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     stmt = select(SkillTaxonomy).where(
         SkillTaxonomy.name.ilike(f"%{q}%") |
@@ -103,8 +103,8 @@ async def search_taxonomy(
     summary="Get all skill categories and counts",
 )
 async def get_categories(
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     result = await db.execute(
         select(SkillTaxonomy.category, func.count(SkillTaxonomy.id))
@@ -122,9 +122,9 @@ async def get_categories(
     description="Skills found in resumes that are not yet in the taxonomy. Agent 5 logs these.",
 )
 async def list_emerging_skills(
+    user: CurrentUser,
     status: str = Query("pending", description="Filter: pending, approved, rejected"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     result = await db.execute(
         select(EmergingSkill)
@@ -165,8 +165,8 @@ class ApproveSkillRequest(BaseModel):
 )
 async def approve_emerging_skill(
     body: ApproveSkillRequest,
+    user: RecruiterUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     import uuid
     try:

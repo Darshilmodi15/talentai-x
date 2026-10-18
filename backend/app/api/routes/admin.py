@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from app.db.database import get_db
 from app.db.models.models import APIKey, HITLReviewItem, MatchResult, Candidate, ParseJob
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import AdminUser, RecruiterUser
 
 router = APIRouter()
 
@@ -24,8 +24,8 @@ class CreateAPIKeyRequest(BaseModel):
 @router.post("/admin/api-keys", summary="Create a new API key", tags=["Admin"])
 async def create_api_key(
     body: CreateAPIKeyRequest,
+    user: AdminUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     """Creates a new API key. The raw key is shown ONCE — store it securely."""
     raw_key = f"tai_{secrets.token_urlsafe(32)}"
@@ -45,8 +45,8 @@ async def create_api_key(
 
 @router.get("/admin/api-keys", summary="List all API keys", tags=["Admin"])
 async def list_api_keys(
+    user: AdminUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     result = await db.execute(select(APIKey).order_by(APIKey.created_at.desc()))
     keys = result.scalars().all()
@@ -63,12 +63,16 @@ async def list_api_keys(
 
 @router.get("/admin/hitl-queue", summary="Get HITL review queue", tags=["Admin"])
 async def get_hitl_queue(
+    user: RecruiterUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     result = await db.execute(
         select(HITLReviewItem)
-        .where(HITLReviewItem.resolved == False)
+        .join(MatchResult, MatchResult.id == HITLReviewItem.match_result_id)
+        .where(
+            HITLReviewItem.resolved == False,
+            MatchResult.owner_user_id == user.id,
+        )
         .order_by(HITLReviewItem.created_at.desc())
         .limit(50)
     )
@@ -93,16 +97,20 @@ async def get_hitl_queue(
 async def resolve_hitl_item(
     item_id: str,
     decision: str,
+    user: RecruiterUser,
     notes: str = "",
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     try:
         item_uuid = uuid.UUID(item_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid item_id")
 
-    item = await db.get(HITLReviewItem, item_uuid)
+    item = await db.scalar(
+        select(HITLReviewItem)
+        .join(MatchResult, MatchResult.id == HITLReviewItem.match_result_id)
+        .where(HITLReviewItem.id == item_uuid, MatchResult.owner_user_id == user.id)
+    )
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
@@ -120,19 +128,26 @@ async def resolve_hitl_item(
 
 @router.get("/admin/stats", summary="System statistics", tags=["Admin"])
 async def system_stats(
+    user: RecruiterUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
-    total_candidates = await db.scalar(select(func.count()).select_from(Candidate))
-    total_jobs = await db.scalar(select(func.count()).select_from(ParseJob))
-    total_matches = await db.scalar(select(func.count()).select_from(MatchResult))
+    total_candidates = await db.scalar(
+        select(func.count()).select_from(Candidate).where(Candidate.owner_user_id == user.id)
+    )
+    total_jobs = await db.scalar(
+        select(func.count()).select_from(ParseJob).where(ParseJob.owner_user_id == user.id)
+    )
+    total_matches = await db.scalar(
+        select(func.count()).select_from(MatchResult).where(MatchResult.owner_user_id == user.id)
+    )
     hitl_pending = await db.scalar(
         select(func.count()).select_from(HITLReviewItem)
-        .where(HITLReviewItem.resolved == False)
+        .join(MatchResult, MatchResult.id == HITLReviewItem.match_result_id)
+        .where(HITLReviewItem.resolved == False, MatchResult.owner_user_id == user.id)
     )
     bias_flagged = await db.scalar(
         select(func.count()).select_from(MatchResult)
-        .where(MatchResult.bias_flagged == True)
+        .where(MatchResult.bias_flagged == True, MatchResult.owner_user_id == user.id)
     )
 
     return {

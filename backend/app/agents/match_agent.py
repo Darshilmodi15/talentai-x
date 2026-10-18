@@ -216,8 +216,8 @@ async def parse_job_description(jd: str) -> dict:
     import logging
     logger = logging.getLogger(__name__)
     logger.info("GEMINI CALL: match_agent.py | parse_job_description | job_id=unknown")
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(settings.GEMINI_MODEL)
+    from app.services.gemini_service import get_gemini_model
+    model = get_gemini_model()
     try:
         response = await model.generate_content_async(
             JD_PARSE_PROMPT.format(jd=jd[:3000]),
@@ -438,8 +438,8 @@ async def run_cot_match(
     import logging
     logger = logging.getLogger(__name__)
     logger.info("GEMINI CALL: match_agent.py | run_cot_match | job_id=unknown")
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(settings.GEMINI_MODEL)
+    from app.services.gemini_service import get_gemini_model
+    model = get_gemini_model()
 
     skills_text = "\n".join(
         f"- {s.get('canonical', '') if isinstance(s, dict) else getattr(s, 'canonical', '')} ({s.get('proficiency', '') if isinstance(s, dict) else getattr(s, 'proficiency', '')}, {s.get('years', '') if isinstance(s, dict) else getattr(s, 'years', '')}yr)"
@@ -491,8 +491,8 @@ async def generate_interview_questions(
     import logging
     logger = logging.getLogger(__name__)
     logger.info("GEMINI CALL: match_agent.py | generate_interview_questions | job_id=unknown")
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(settings.GEMINI_MODEL)
+    from app.services.gemini_service import get_gemini_model
+    model = get_gemini_model()
     matched_names = [m.get("canonical", "") if isinstance(m, dict) else getattr(m, "candidate_skill", "") for m in matched[:5]]
     try:
         response = await model.generate_content_async(
@@ -534,8 +534,8 @@ async def generate_upskilling(gaps: list[str]) -> dict:
     import logging
     logger = logging.getLogger(__name__)
     logger.info("GEMINI CALL: match_agent.py | generate_upskilling | job_id=unknown")
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(settings.GEMINI_MODEL)
+    from app.services.gemini_service import get_gemini_model
+    model = get_gemini_model()
     try:
         response = await model.generate_content_async(
             UPSKILLING_PROMPT.format(gaps=gaps[:8]),

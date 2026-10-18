@@ -306,7 +306,18 @@ def _is_not_found_error(exception: Exception) -> bool:
 
 def _is_permission_denied_error(exception: Exception) -> bool:
     error_str = str(exception).lower()
-    return any(pattern in error_str for pattern in ["403", "permission denied", "denied access", "unauthorized", "invalid api key"])
+    return any(
+        pattern in error_str
+        for pattern in [
+            "403",
+            "permission denied",
+            "denied access",
+            "unauthorized",
+            "invalid api key",
+            "api key not valid",
+            "api_key_invalid",
+        ]
+    )
 
 
 async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500, _retries: int = 4) -> dict:
@@ -323,14 +334,16 @@ async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500,
     for attempt in range(_retries):
         try:
             state["gemini_api_calls"] = (state.get("gemini_api_calls") or 0) + 1
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel(settings.GEMINI_MODEL)
+            from app.services.gemini_service import gemini_model_candidates, get_gemini_model
+            model_candidates = gemini_model_candidates()
+            model_name = model_candidates[min(attempt, len(model_candidates) - 1)] if model_candidates else settings.GEMINI_MODEL
+            model = get_gemini_model(model_name)
 
             api_key_prefix = settings.GEMINI_API_KEY[:6] + "..." if settings.GEMINI_API_KEY else "MISSING_KEY"
             estimated_tokens = len(prompt) // 4
             logger.info(
                 f"Calling Gemini | agent=parse_agent | job_id={job_id} | attempt={attempt+1}/{_retries} | "
-                f"key_prefix={api_key_prefix} | model={settings.GEMINI_MODEL} | est_tokens_sent={estimated_tokens}"
+                f"key_prefix={api_key_prefix} | model={model_name} | est_tokens_sent={estimated_tokens}"
             )
 
             from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -468,7 +481,14 @@ async def call_gemini(prompt: str, state: PipelineState, max_tokens: int = 2500,
                 )
             
             if _is_not_found_error(e):
-                logger.error(f"Gemini model {settings.GEMINI_MODEL} not found (404). Aborting without retry.")
+                if attempt < _retries - 1 and model_candidates and attempt + 1 < len(model_candidates):
+                    logger.warning(
+                        "Gemini model %s is unavailable; retrying with %s",
+                        model_name,
+                        model_candidates[attempt + 1],
+                    )
+                    continue
+                logger.error(f"Gemini model {model_name} not found (404).")
                 raise GeminiNotFoundError(
                     f"GEMINI_MODEL_NOT_FOUND\n"
                     f"TYPE={type(e).__name__}\nERROR={str(e)}\n"

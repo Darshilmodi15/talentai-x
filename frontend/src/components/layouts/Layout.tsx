@@ -1,9 +1,10 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { Outlet, NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Upload, Users, Zap, BookOpen,
   Settings, GitBranch, BarChart3, Shield
 } from 'lucide-react'
 import clsx from 'clsx'
+import { useAuth } from '../../auth/AuthContext'
 
 const NAV_ITEMS = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
@@ -16,6 +17,9 @@ const NAV_ITEMS = [
 ]
 
 export default function Layout() {
+  const { user, signOut } = useAuth()
+  const navItems = NAV_ITEMS.filter(({ to }) => user?.role === 'recruiter' || !['/match', '/match/batch', '/admin'].includes(to))
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
       <div className="flex flex-1 overflow-hidden">
@@ -36,7 +40,7 @@ export default function Layout() {
 
           {/* Nav */}
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-            {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+            {navItems.map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -57,8 +61,15 @@ export default function Layout() {
 
           {/* Footer */}
           <div className="px-4 py-3 border-t border-gray-200">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-gray-800">{user?.name}</p>
+                <p className="truncate text-xs capitalize text-gray-500">{user?.isDemo ? 'Demo ' : ''}{user?.role}</p>
+              </div>
+              <button onClick={() => void signOut()} className="text-xs font-medium text-indigo-600 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">Sign out</button>
+            </div>
             <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-green-500" />
+              <Shield className="w-4 h-4 text-green-500" aria-hidden="true" />
               <p className="text-xs text-gray-500">Bias-protected · GDPR ready</p>
             </div>
           </div>

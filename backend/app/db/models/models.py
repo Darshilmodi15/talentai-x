@@ -42,6 +42,16 @@ class APIKey(Base):
     last_used: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    email: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    role: Mapped[str] = mapped_column(String(30), default="individual", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
 # ──────────────────────────────────────────────────────────────────
 # Parse Jobs
 # ──────────────────────────────────────────────────────────────────
@@ -49,6 +59,7 @@ class ParseJob(Base):
     __tablename__ = "parse_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     status: Mapped[ProcessingStatus] = mapped_column(
         SAEnum(ProcessingStatus), default=ProcessingStatus.QUEUED
     )
@@ -71,6 +82,7 @@ class Candidate(Base):
     __tablename__ = "candidates"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     parse_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("parse_jobs.id"), nullable=False)
 
     # Basic Info
@@ -145,6 +157,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text)
     company: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -164,6 +177,7 @@ class MatchResult(Base):
     __tablename__ = "match_results"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id"))
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id"))
 

@@ -77,7 +77,7 @@ export default function AdminPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          item.priority === 'high' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'
+                          item.priority === 'high' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'
                         }`}>
                           {item.priority}
                         </span>
@@ -118,11 +118,11 @@ export default function AdminPage() {
         <h3 className="font-semibold text-gray-900 mb-3">API Access</h3>
         <div className="space-y-2 text-sm">
           <div className="flex items-center gap-2">
-            <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">Dev key:</code>
-            <code className="text-gray-600">dev_key_change_in_production</code>
+            <code className="bg-gray-100 px-2 py-0.5 rounded text-xs">Auth:</code>
+            <code className="text-gray-600">Supabase session</code>
           </div>
           <p className="text-gray-500 text-xs">
-            Set in .env as VITE_API_KEY. Create production keys via POST /api/v1/admin/api-keys.
+            Admin requests use the signed-in Supabase session. API key management is restricted to server-side administrators.
           </p>
           <a
             href="http://localhost:8000/docs"

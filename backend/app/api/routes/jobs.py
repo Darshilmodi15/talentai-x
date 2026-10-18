@@ -8,7 +8,7 @@ from typing import Optional
 
 from app.db.database import get_db
 from app.db.models.models import Job
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import CurrentUser
 
 router = APIRouter()
 
@@ -23,14 +23,15 @@ class CreateJobRequest(BaseModel):
 @router.post("/jobs", summary="Save a job description for repeated matching")
 async def create_job(
     body: CreateJobRequest,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     job = Job(
         title=body.title,
         description=body.description,
         company=body.company,
         experience_years_min=body.experience_years_min,
+        owner_user_id=user.id,
     )
     db.add(job)
     await db.commit()
@@ -39,10 +40,12 @@ async def create_job(
 
 @router.get("/jobs", summary="List saved jobs")
 async def list_jobs(
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
-    result = await db.execute(select(Job).order_by(Job.created_at.desc()).limit(50))
+    result = await db.execute(
+        select(Job).where(Job.owner_user_id == user.id).order_by(Job.created_at.desc()).limit(50)
+    )
     jobs = result.scalars().all()
     return {
         "jobs": [
@@ -56,14 +59,14 @@ async def list_jobs(
 @router.get("/saved-jobs/{job_id}", summary="Get a saved job")
 async def get_job(
     job_id: str,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     try:
         job_uuid = uuid.UUID(job_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job_id")
-    job = await db.get(Job, job_uuid)
+    job = await db.scalar(select(Job).where(Job.id == job_uuid, Job.owner_user_id == user.id))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return {

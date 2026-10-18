@@ -11,6 +11,10 @@ import MatchPage from './components/pages/MatchPage'
 import TaxonomyPage from './components/pages/TaxonomyPage'
 import AdminPage from './components/pages/AdminPage'
 import BatchMatchPage from './components/pages/BatchMatchPage'
+import LandingPage from './components/pages/LandingPage'
+import LoginPage from './components/pages/LoginPage'
+import RequireAuth from './auth/RequireAuth'
+import { AuthProvider } from './auth/AuthContext'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,23 +27,31 @@ const queryClient = new QueryClient({
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Toaster position="top-right" />
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="upload" element={<UploadPage />} />
-            <Route path="candidates" element={<CandidatesPage />} />
-            <Route path="candidates/:id" element={<CandidateDetail />} />
-            <Route path="match" element={<MatchPage />} />
-            <Route path="match/batch" element={<BatchMatchPage />} />
-            <Route path="taxonomy" element={<TaxonomyPage />} />
-            <Route path="admin" element={<AdminPage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Toaster position="top-right" />
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route element={<RequireAuth />}>
+              <Route element={<Layout />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/upload" element={<UploadPage />} />
+                <Route path="/candidates" element={<CandidatesPage />} />
+                <Route path="/candidates/:id" element={<CandidateDetail />} />
+                <Route element={<RequireAuth role="recruiter" />}>
+                  <Route path="/match" element={<MatchPage />} />
+                  <Route path="/match/batch" element={<BatchMatchPage />} />
+                  <Route path="/admin" element={<AdminPage />} />
+                </Route>
+                <Route path="/taxonomy" element={<TaxonomyPage />} />
+              </Route>
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </AuthProvider>
   )
 }

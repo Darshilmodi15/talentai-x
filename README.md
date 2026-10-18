@@ -69,6 +69,7 @@ git clone <repo>
 cd talentai-x
 cp .env.example .env
 # Edit .env — set GEMINI_API_KEY
+# For real account login, also set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 ```
 
 ### 2. One-command setup
@@ -103,32 +104,52 @@ cd frontend && npm run dev
 | Swagger UI | http://localhost:8000/docs |
 | ChromaDB | http://localhost:8001 |
 
+### Authentication and demo access
+
+The frontend supports Supabase Auth for individual and recruiter accounts. Add the
+Supabase project URL and anon key to `.env`; the Vite configuration loads the root
+environment file for local development and Docker Compose passes these values to
+the frontend container.
+
+Without Supabase credentials, use **Demo individual** or **Demo recruiter** on the
+login screen to preview the two role-specific interfaces. Demo access is for UI
+preview only and does not provide production account isolation.
+
+### Gemini model selection
+
+The backend prefers `GEMINI_MODEL` when that model supports `generateContent` for
+the configured API key. It checks the key's available models and falls back to
+`GEMINI_MODEL_FALLBACKS` when necessary. The current embedding default is
+`gemini-embedding-001`; update the values in `.env` if your Google project exposes
+a different model set.
+
 ---
 
 ## API Reference
 
-All endpoints require `X-API-Key` header.  
-Dev key: `dev_key_change_in_production`
+Protected endpoints require the signed-in user's Supabase access token. The
+backend validates the JWT and loads the user's role from `user_profiles`;
+frontend role metadata is never used for authorization.
 
 ### Resume Parsing
 ```bash
 # Upload single resume
 curl -X POST http://localhost:8000/api/v1/parse \
-  -H "X-API-Key: dev_key_change_in_production" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -F "file=@resume.pdf"
 # Returns: { "job_id": "uuid", "status": "queued" }
 
 # Poll status
 curl http://localhost:8000/api/v1/jobs/{job_id} \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 
 # Get agent trace
 curl http://localhost:8000/api/v1/jobs/{job_id}/trace \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 
 # Batch upload
 curl -X POST http://localhost:8000/api/v1/parse/batch \
-  -H "X-API-Key: dev_key_change_in_production" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -F "files=@resume1.pdf" -F "files=@resume2.docx"
 ```
 
@@ -136,22 +157,22 @@ curl -X POST http://localhost:8000/api/v1/parse/batch \
 ```bash
 # List candidates
 curl http://localhost:8000/api/v1/candidates \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 
 # Full profile
 curl http://localhost:8000/api/v1/candidates/{id} \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 
 # Normalized skill profile
 curl http://localhost:8000/api/v1/candidates/{id}/skills \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 ```
 
 ### Matching
 ```bash
 # Match one candidate to JD
 curl -X POST http://localhost:8000/api/v1/match \
-  -H "X-API-Key: dev_key_change_in_production" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "candidate_id": "uuid",
@@ -160,7 +181,7 @@ curl -X POST http://localhost:8000/api/v1/match \
 
 # Batch rank
 curl -X POST http://localhost:8000/api/v1/match/batch \
-  -H "X-API-Key: dev_key_change_in_production" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "candidate_ids": ["uuid1", "uuid2"],
@@ -170,22 +191,22 @@ curl -X POST http://localhost:8000/api/v1/match/batch \
 
 # Bias audit (NYC Local Law 144 compliance)
 curl -X POST "http://localhost:8000/api/v1/match/bias-audit?job_description=..." \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 ```
 
 ### Skill Taxonomy
 ```bash
 # Browse
 curl "http://localhost:8000/api/v1/skills/taxonomy?category=technical" \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 
 # Search
 curl "http://localhost:8000/api/v1/skills/taxonomy/search?q=pytorch" \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 
 # Emerging skills (Agent 5 output)
 curl http://localhost:8000/api/v1/skills/taxonomy/emerging \
-  -H "X-API-Key: dev_key_change_in_production"
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN"
 ```
 
 ---

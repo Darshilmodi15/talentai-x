@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Users, Zap, AlertTriangle, Shield, Upload, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { getSystemStats } from '../../api/client'
+import { useAuth } from '../../auth/AuthContext'
 
 function StatCard({ label, value, icon: Icon, color }: {
   label: string; value: string | number; icon: any; color: string
@@ -21,11 +22,44 @@ function StatCard({ label, value, icon: Icon, color }: {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { data: stats, isLoading } = useQuery({
     queryKey: ['stats'],
     queryFn: getSystemStats,
     refetchInterval: 30_000,
+    enabled: user?.role === 'recruiter' && !user.isDemo,
   })
+
+  if (user?.role !== 'recruiter') {
+    return (
+      <div>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">My resume workspace</h1>
+          <p className="mt-1 text-gray-500">Upload your resume and review your private parsed profile.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <button
+            onClick={() => navigate('/upload')}
+            className="rounded-xl bg-indigo-600 p-6 text-left text-white transition-colors hover:bg-indigo-700"
+          >
+            <Upload className="mb-3 h-6 w-6" />
+            <p className="text-lg font-semibold">Upload my resume</p>
+            <p className="mt-1 text-sm text-indigo-100">Get a private overview of your skills and experience.</p>
+            <ArrowRight className="mt-3 h-4 w-4" />
+          </button>
+          <button
+            onClick={() => navigate('/candidates')}
+            className="rounded-xl border border-gray-200 bg-white p-6 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50"
+          >
+            <Users className="mb-3 h-6 w-6 text-indigo-600" />
+            <p className="text-lg font-semibold text-gray-900">My parsed profiles</p>
+            <p className="mt-1 text-sm text-gray-500">Only records belonging to your account are shown.</p>
+            <ArrowRight className="mt-3 h-4 w-4 text-gray-400" />
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>

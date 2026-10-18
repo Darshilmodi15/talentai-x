@@ -1,14 +1,21 @@
 import axios, { AxiosResponse, AxiosError } from 'axios'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
-const API_KEY = import.meta.env.VITE_API_KEY || 'dev_key_change_in_production'
+let accessToken: string | null = null
+
+export const setAccessToken = (token: string | null) => {
+  accessToken = token
+}
 
 export const api = axios.create({
   baseURL: `${API_BASE}/api/v1`,
   timeout: 120_000,
-  headers: {
-    'X-API-Key': API_KEY,
-  },
+  headers: {},
+})
+
+api.interceptors.request.use((config) => {
+  if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`
+  return config
 })
 
 const normalizeApiError = (error: AxiosError<any>) => {

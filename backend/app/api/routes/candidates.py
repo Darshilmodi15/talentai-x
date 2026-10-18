@@ -15,7 +15,7 @@ from sqlalchemy import select, func
 
 from app.db.database import get_db
 from app.db.models.models import Candidate, MatchResult
-from app.api.middleware.auth import verify_api_key
+from app.api.middleware.auth import CurrentUser
 
 router = APIRouter()
 
@@ -25,15 +25,15 @@ router = APIRouter()
     summary="List all parsed candidates",
 )
 async def list_candidates(
+    user: CurrentUser,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None, description="Search by name or email"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     offset = (page - 1) * page_size
-    stmt = select(Candidate).order_by(Candidate.created_at.desc())
-    total_stmt = select(func.count()).select_from(Candidate)
+    stmt = select(Candidate).where(Candidate.owner_user_id == user.id).order_by(Candidate.created_at.desc())
+    total_stmt = select(func.count()).select_from(Candidate).where(Candidate.owner_user_id == user.id)
 
     if search:
         search_filter = (
@@ -74,15 +74,17 @@ async def list_candidates(
 )
 async def get_candidate(
     candidate_id: str,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     try:
         cand_uuid = uuid.UUID(candidate_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid candidate_id")
 
-    candidate = await db.get(Candidate, cand_uuid)
+    candidate = await db.scalar(
+        select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+    )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -119,17 +121,19 @@ years of experience, source (resume/github/inferred), and inferred skills.
 )
 async def get_candidate_skills(
     candidate_id: str,
+    user: CurrentUser,
     include_inferred: bool = Query(True, description="Include skills inferred from the implication graph"),
     source_filter: Optional[str] = Query(None, description="Filter by source: resume, github, linkedin, inferred"),
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     try:
         cand_uuid = uuid.UUID(candidate_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid candidate_id")
 
-    candidate = await db.get(Candidate, cand_uuid)
+    candidate = await db.scalar(
+        select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+    )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -178,8 +182,8 @@ async def get_candidate_skills(
 )
 async def get_candidate_matches(
     candidate_id: str,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     try:
         cand_uuid = uuid.UUID(candidate_id)
@@ -188,7 +192,7 @@ async def get_candidate_matches(
 
     result = await db.execute(
         select(MatchResult)
-        .where(MatchResult.candidate_id == cand_uuid)
+        .where(MatchResult.candidate_id == cand_uuid, MatchResult.owner_user_id == user.id)
         .order_by(MatchResult.created_at.desc())
     )
     matches = result.scalars().all()
@@ -220,15 +224,17 @@ async def get_candidate_matches(
 )
 async def delete_candidate(
     candidate_id: str,
+    user: CurrentUser,
     db: AsyncSession = Depends(get_db),
-    _: str = Depends(verify_api_key),
 ):
     try:
         cand_uuid = uuid.UUID(candidate_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid candidate_id")
 
-    candidate = await db.get(Candidate, cand_uuid)
+    candidate = await db.scalar(
+        select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+    )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 

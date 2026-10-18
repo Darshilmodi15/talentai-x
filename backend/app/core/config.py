@@ -14,7 +14,10 @@ class Settings(BaseSettings):
     SQL_ECHO: bool = False
 
     SECRET_KEY: str = "change_this_in_production"
-    API_KEY_HEADER: str = "X-API-Key"
+    SUPABASE_URL: str = ""
+    SUPABASE_JWT_SECRET: str = ""
+    SUPABASE_JWT_AUDIENCE: str = "authenticated"
+    ALLOW_DEV_API_KEY: bool = False
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
@@ -56,12 +59,16 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = Field(default="")
     GEMINI_MODEL: str = "gemini-2.5-flash"
-    EMBEDDING_MODEL: str = "models/embedding-001"
+    GEMINI_MODEL_FALLBACKS: List[str] = [
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+    ]
+    EMBEDDING_MODEL: str = "gemini-embedding-001"
     MATCH_THRESHOLD_AUTO: float = 0.85
     MATCH_THRESHOLD_REVIEW: float = 0.60
     MAX_UPLOAD_SIZE_MB: int = 10
     VITE_API_URL: Optional[str] = None
-    VITE_API_KEY: Optional[str] = None
     ALLOWED_MIME_TYPES: List[str] = [
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
