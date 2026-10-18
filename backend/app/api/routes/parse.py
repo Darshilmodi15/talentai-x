@@ -385,7 +385,6 @@ async def parse_batch(
 
 @router.get(
     "/jobs/{job_id}",
-    response_model=JobStatusResponse,
     summary="Poll parse job status",
 )
 async def get_job_status(
@@ -473,21 +472,21 @@ async def get_job_status(
             parsed = candidate.parsed_data
             layout = parsed.get("layout_type") if isinstance(parsed, dict) else None
 
-    return JobStatusResponse(
-        job_id=job_id,
-        status=job_status_value(job.status),
-        file_name=job.file_name,
-        created_at=isoformat_or_empty(job.created_at),
-        completed_at=isoformat_or_empty(job.completed_at) if job.completed_at else None,
-        candidate_id=candidate_id,
-        parse_confidence=parse_confidence,
-        layout_detected=layout,
-        resume_language=lang,
-        ai_content_probability=ai_prob,
-        skills_found=skills_count,
-        error_message=sanitize_job_error(job.error_message),
-        partial_result=None,
-    )
+    return {
+        "job_id": job_id,
+        "status": job_status_value(job.status),
+        "file_name": str(job.file_name or "upload"),
+        "created_at": isoformat_or_empty(job.created_at),
+        "completed_at": isoformat_or_empty(job.completed_at) if job.completed_at else None,
+        "candidate_id": candidate_id,
+        "parse_confidence": parse_confidence,
+        "layout_detected": layout,
+        "resume_language": lang,
+        "ai_content_probability": ai_prob,
+        "skills_found": skills_count,
+        "error_message": sanitize_job_error(job.error_message),
+        "partial_result": None,
+    }
 
 
 @router.get(
