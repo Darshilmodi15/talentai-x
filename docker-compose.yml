@@ -55,6 +55,7 @@ services:
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
       SUPABASE_JWT_AUDIENCE: ${SUPABASE_JWT_AUDIENCE:-authenticated}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       SECRET_KEY: ${SECRET_KEY:-replace_me}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     depends_on:
@@ -86,6 +87,7 @@ services:
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
       SUPABASE_JWT_AUDIENCE: ${SUPABASE_JWT_AUDIENCE:-authenticated}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

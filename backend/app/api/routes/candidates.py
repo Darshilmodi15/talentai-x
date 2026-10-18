@@ -32,8 +32,8 @@ async def list_candidates(
     db: AsyncSession = Depends(get_db),
 ):
     offset = (page - 1) * page_size
-    stmt = select(Candidate).where(Candidate.owner_user_id == user.id).order_by(Candidate.created_at.desc())
-    total_stmt = select(func.count()).select_from(Candidate).where(Candidate.owner_user_id == user.id)
+    stmt = select(Candidate).where(Candidate.user_id == user.id).order_by(Candidate.created_at.desc())
+    total_stmt = select(func.count()).select_from(Candidate).where(Candidate.user_id == user.id)
 
     if search:
         search_filter = (
@@ -83,7 +83,7 @@ async def get_candidate(
         raise HTTPException(status_code=400, detail="Invalid candidate_id")
 
     candidate = await db.scalar(
-        select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+        select(Candidate).where(Candidate.id == cand_uuid, Candidate.user_id == user.id)
     )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -132,7 +132,7 @@ async def get_candidate_skills(
         raise HTTPException(status_code=400, detail="Invalid candidate_id")
 
     candidate = await db.scalar(
-        select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+        select(Candidate).where(Candidate.id == cand_uuid, Candidate.user_id == user.id)
     )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -192,7 +192,7 @@ async def get_candidate_matches(
 
     result = await db.execute(
         select(MatchResult)
-        .where(MatchResult.candidate_id == cand_uuid, MatchResult.owner_user_id == user.id)
+        .where(MatchResult.candidate_id == cand_uuid, MatchResult.user_id == user.id)
         .order_by(MatchResult.created_at.desc())
     )
     matches = result.scalars().all()
@@ -233,7 +233,7 @@ async def delete_candidate(
         raise HTTPException(status_code=400, detail="Invalid candidate_id")
 
     candidate = await db.scalar(
-        select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+        select(Candidate).where(Candidate.id == cand_uuid, Candidate.user_id == user.id)
     )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")

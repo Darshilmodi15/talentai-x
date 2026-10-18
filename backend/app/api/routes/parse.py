@@ -7,14 +7,14 @@ GET  /api/v1/jobs/{job_id}/trace — agent execution trace
 """
 import uuid
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -27,6 +27,38 @@ from app.services.candidate_service import save_candidate_from_state
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
+
+
+async def enforce_upload_quota(
+    db: AsyncSession,
+    user: CurrentUser,
+    requested_files: int = 1,
+) -> None:
+    """Limit parsing volume per account without sharing a global API quota."""
+    limit = (
+        settings.RECRUITER_UPLOAD_LIMIT
+        if user.role in {"recruiter", "admin"}
+        else settings.INDIVIDUAL_UPLOAD_LIMIT
+    )
+    window_start = datetime.now(timezone.utc) - timedelta(
+        hours=settings.UPLOAD_LIMIT_WINDOW_HOURS
+    )
+    used = await db.scalar(
+        select(func.count())
+        .select_from(ParseJob)
+        .where(ParseJob.user_id == user.id, ParseJob.created_at >= window_start)
+    ) or 0
+    if used + requested_files > limit:
+        remaining = max(limit - used, 0)
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Upload limit reached. Your {user.role} account can upload "
+                f"{limit} files every {settings.UPLOAD_LIMIT_WINDOW_HOURS} hours. "
+                f"Remaining: {remaining}."
+            ),
+            headers={"Retry-After": str(settings.UPLOAD_LIMIT_WINDOW_HOURS * 3600)},
+        )
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -65,7 +97,7 @@ async def process_resume_task(
     file_bytes: bytes,
     file_name: str,
     file_type: str,
-    owner_user_id: str,
+    user_id: str,
 ):
     """
     Background task: run pipeline and persist results.
@@ -119,7 +151,7 @@ async def process_resume_task(
             else:
                 # ── COMPLETED or PARTIAL: Save candidate ──
                 candidate_id = await save_candidate_from_state(
-                    state, job_id, db, uuid.UUID(owner_user_id)
+                    state, job_id, db, uuid.UUID(user_id)
                 )
                 await db.commit()
                 state["candidate_id"] = str(candidate_id)
@@ -208,6 +240,7 @@ async def parse_resume(
     file: UploadFile = File(..., description="Resume file (PDF, DOCX, or TXT)"),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_upload_quota(db, user)
     # Validate file type
     content_type = file.content_type or ""
     file_type = ALLOWED_EXTENSIONS.get(content_type)
@@ -243,7 +276,7 @@ async def parse_resume(
         file_name=file.filename or "upload",
         file_type=file_type,
         file_path=f"uploads/{job_id}.{file_type}",
-        owner_user_id=user.id,
+        user_id=user.id,
     )
     db.add(job)
     await db.commit()
@@ -260,7 +293,7 @@ async def parse_resume(
         file_bytes=file_bytes,
         file_name=file.filename or "upload",
         file_type=file_type,
-        owner_user_id=str(user.id),
+        user_id=str(user.id),
     )
 
     return ParseJobResponse(
@@ -286,6 +319,7 @@ async def parse_batch(
 ):
     if len(files) > 50:
         raise HTTPException(status_code=400, detail="Max 50 files per batch")
+    await enforce_upload_quota(db, user, len(files))
 
     batch_id = str(uuid.uuid4())
     job_ids = []
@@ -309,7 +343,7 @@ async def parse_batch(
             file_name=file.filename or "upload",
             file_type=file_type,
             file_path=f"uploads/{job_id}.{file_type}",
-            owner_user_id=user.id,
+            user_id=user.id,
         )
         db.add(job)
         job_ids.append(job_id)
@@ -324,7 +358,7 @@ async def parse_batch(
             file_bytes=file_bytes,
             file_name=file.filename or "upload",
             file_type=file_type,
-            owner_user_id=str(user.id),
+            user_id=str(user.id),
         )
 
     await db.commit()
@@ -354,7 +388,7 @@ async def get_job_status(
         raise HTTPException(status_code=400, detail="Invalid job_id format")
 
     job = await db.scalar(
-        select(ParseJob).where(ParseJob.id == job_uuid, ParseJob.owner_user_id == user.id)
+        select(ParseJob).where(ParseJob.id == job_uuid, ParseJob.user_id == user.id)
     )
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -457,7 +491,7 @@ async def get_job_trace(
         raise HTTPException(status_code=400, detail="Invalid job_id format")
 
     job = await db.scalar(
-        select(ParseJob).where(ParseJob.id == job_uuid, ParseJob.owner_user_id == user.id)
+        select(ParseJob).where(ParseJob.id == job_uuid, ParseJob.user_id == user.id)
     )
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

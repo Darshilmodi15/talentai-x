@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: str = ""
     SUPABASE_JWT_AUDIENCE: str = "authenticated"
     ALLOW_DEV_API_KEY: bool = False
+    INDIVIDUAL_UPLOAD_LIMIT: int = 3
+    RECRUITER_UPLOAD_LIMIT: int = 25
+    UPLOAD_LIMIT_WINDOW_HOURS: int = 24
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
     ALLOWED_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
@@ -57,9 +61,8 @@ class Settings(BaseSettings):
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8001
 
-    # Supabase Auth
-    SUPABASE_URL: Optional[str] = None
-    SUPABASE_JWT_SECRET: Optional[str] = None
+    # Frontend Supabase values are included here because the root .env is shared
+    # by the Vite build and backend services.
     VITE_SUPABASE_URL: Optional[str] = None
     VITE_SUPABASE_ANON_KEY: Optional[str] = None
 
@@ -102,6 +105,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = (Path(__file__).resolve().parents[3] / ".env", ".env")
         case_sensitive = True
+        extra = "ignore"
 
 
 @lru_cache()

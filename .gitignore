@@ -43,6 +43,7 @@ docker-compose.override.yml
 logs/
 tmp/
 .cache/
+.impeccable/
 
 # ─── ChromaDB local data ─────────────────────────────────────────
 chroma_data/

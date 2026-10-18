@@ -69,7 +69,8 @@ git clone <repo>
 cd talentai-x
 cp .env.example .env
 # Edit .env — set GEMINI_API_KEY
-# For real account login, also set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+# For real account login, also set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.
+# The browser must never receive SUPABASE_SERVICE_ROLE_KEY or SUPABASE_JWT_SECRET.
 ```
 
 ### 2. One-command setup
@@ -111,9 +112,32 @@ Supabase project URL and anon key to `.env`; the Vite configuration loads the ro
 environment file for local development and Docker Compose passes these values to
 the frontend container.
 
-Without Supabase credentials, use **Demo individual** or **Demo recruiter** on the
-login screen to preview the two role-specific interfaces. Demo access is for UI
-preview only and does not provide production account isolation.
+There are no public demo buttons. To create private team demo accounts, temporarily
+add these values to the root `.env`:
+
+```bash
+DEMO_INDIVIDUAL_EMAIL=...
+DEMO_INDIVIDUAL_PASSWORD=...
+DEMO_RECRUITER_EMAIL=...
+DEMO_RECRUITER_PASSWORD=...
+SUPABASE_SERVICE_ROLE_KEY=...
+```
+
+Then run `python scripts/create_demo_users.py`. The script creates or updates
+confirmed Supabase users and assigns their server-side roles. Remove the service
+role key and demo passwords after running; never add them to Vercel or any
+`VITE_*` variable.
+
+### Deployment environment variables
+
+| Environment | Required variables |
+|---|---|
+| Local root `.env` | `GEMINI_API_KEY`, database/Redis values, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` |
+| Render backend | `GEMINI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, `SUPABASE_JWT_AUDIENCE`, `SECRET_KEY`, and allowed-origin values |
+| Vercel frontend | `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` only |
+
+`SUPABASE_JWT_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` are backend/setup secrets.
+They must not be exposed to the browser.
 
 ### Gemini model selection
 

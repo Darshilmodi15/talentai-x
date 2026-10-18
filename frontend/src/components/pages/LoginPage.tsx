@@ -5,13 +5,13 @@ import toast from 'react-hot-toast'
 import { useAuth, UserRole } from '../../auth/AuthContext'
 
 export default function LoginPage() {
-  const { user, signIn, signUp, continueAsDemo } = useAuth()
+  const { user, signIn, signUp } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [role, setRole] = useState<UserRole>(
-    searchParams.get('demo') === 'recruiter' || searchParams.get('role') === 'recruiter'
+    searchParams.get('role') === 'recruiter'
       ? 'recruiter'
       : 'individual'
   )
@@ -65,8 +65,6 @@ export default function LoginPage() {
             {mode === 'signup' && <fieldset><legend className="text-sm font-medium text-slate-700">Workspace type</legend><div className="mt-2 grid grid-cols-2 gap-2">{(['individual', 'recruiter'] as UserRole[]).map((option) => <button type="button" key={option} onClick={() => setRole(option)} className={`rounded-lg border px-3 py-2.5 text-left text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${role === option ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600'}`}>{option === 'recruiter' ? 'HR / Recruiter' : 'Individual'}</button>)}</div></fieldset>}
             <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">{busy && <Loader2 className="h-4 w-4 animate-spin" />}{mode === 'signin' ? 'Sign in' : 'Create account'}</button>
           </form>
-          <div className="my-5 flex items-center gap-3 text-xs text-slate-500"><span className="h-px flex-1 bg-slate-200" />or<span className="h-px flex-1 bg-slate-200" /></div>
-          <div className="grid grid-cols-2 gap-2"><button onClick={() => { continueAsDemo('individual'); navigate('/dashboard') }} className="rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">Demo individual</button><button onClick={() => { continueAsDemo('recruiter'); navigate('/dashboard') }} className="rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">Demo recruiter</button></div>
           <p className="mt-6 text-center text-sm text-slate-500">{mode === 'signin' ? 'New here?' : 'Already have an account?'} <button onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')} className="font-semibold text-indigo-600 hover:text-indigo-700">{mode === 'signin' ? 'Create an account' : 'Sign in'}</button></p>
         </div>
       </div>

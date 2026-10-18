@@ -164,7 +164,7 @@ async def match_candidate(
     try:
         cand_uuid = uuid.UUID(body.candidate_id)
         candidate = await db.scalar(
-            select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+            select(Candidate).where(Candidate.id == cand_uuid, Candidate.user_id == user.id)
         )
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidate not found")
@@ -231,7 +231,7 @@ async def match_candidate(
         try:
             # Save or find job
             job = Job(
-                owner_user_id=user.id,
+                user_id=user.id,
                 title="Unspecified",
                 description=body.job_description,
                 required_skills=state.get("skill_gaps", []),
@@ -244,7 +244,7 @@ async def match_candidate(
                 else MatchStatus.AUTO_MERGED
             )
             match_result = MatchResult(
-                owner_user_id=user.id,
+                user_id=user.id,
                 candidate_id=cand_uuid,
                 job_id=job.id,
                 match_score=state["match_score"],
@@ -357,7 +357,7 @@ async def batch_match(
         try:
             cand_uuid = uuid.UUID(cand_id_str)
             candidate = await db.scalar(
-                select(Candidate).where(Candidate.id == cand_uuid, Candidate.owner_user_id == user.id)
+                select(Candidate).where(Candidate.id == cand_uuid, Candidate.user_id == user.id)
             )
             if not candidate:
                 failures.append({"candidate_id": cand_id_str, "error": "Candidate not found"})

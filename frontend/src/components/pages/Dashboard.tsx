@@ -27,7 +27,7 @@ export default function Dashboard() {
     queryKey: ['stats'],
     queryFn: getSystemStats,
     refetchInterval: 30_000,
-    enabled: user?.role === 'recruiter' && !user.isDemo,
+    enabled: user?.role === 'recruiter',
   })
 
   if (user?.role !== 'recruiter') {
