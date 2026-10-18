@@ -95,19 +95,32 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled Server Error on {request.method} {request.url}")
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin and (
+        origin.rstrip("/") in {item.rstrip("/") for item in settings.ALLOWED_ORIGINS}
+        or (settings.ALLOWED_ORIGIN_REGEX and re.fullmatch(settings.ALLOWED_ORIGIN_REGEX, origin))
+    ):
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
     return JSONResponse(
         status_code=500,
         content={
             "success": False,
             "error_code": "INTERNAL_SERVER_ERROR",
             "message": "An unexpected server error occurred. Please try again later."
-        }
+        },
+        headers=headers,
     )
 
 # Routers
