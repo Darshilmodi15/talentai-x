@@ -16,23 +16,12 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
 CREATE INDEX IF NOT EXISTS idx_user_profiles_email ON public.user_profiles(email);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON public.user_profiles(role);
 
--- 2. Link foreign key to auth.users if running in Supabase
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'auth' AND table_name = 'users'
-    ) THEN
-        IF NOT EXISTS (
-            SELECT 1 FROM information_schema.table_constraints 
-            WHERE constraint_name = 'fk_user_profiles_auth_users'
-        ) THEN
-            ALTER TABLE public.user_profiles 
-            ADD CONSTRAINT fk_user_profiles_auth_users 
-            FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE CASCADE;
-        END IF;
-    END IF;
-END $$;
+-- 2. Drop FK to auth.users if it exists — system/API-key accounts use
+--    synthetic UUIDs that are not in auth.users. Supabase JWT validation
+--    at the application layer ensures real user identity. The trigger in
+--    step 4 still syncs sign-ups from auth.users into user_profiles.
+ALTER TABLE IF EXISTS public.user_profiles
+    DROP CONSTRAINT IF EXISTS fk_user_profiles_auth_users;
 
 -- 3. Populate existing users from auth.users (if any exist already)
 DO $$

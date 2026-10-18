@@ -39,6 +39,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 SCHEMA_UPGRADE_STATEMENTS = [
+    # Drop the FK from user_profiles → auth.users if it exists.
+    # This constraint prevents system/API-key accounts (synthetic UUIDs) from
+    # being created in user_profiles. Supabase JWT identity is validated at the
+    # application layer; a hard FK coupling to auth.users is unnecessary.
+    """
+    ALTER TABLE IF EXISTS user_profiles
+    DROP CONSTRAINT IF EXISTS fk_user_profiles_auth_users;
+    """,
     """
     CREATE TABLE IF NOT EXISTS user_profiles (
         id UUID PRIMARY KEY,

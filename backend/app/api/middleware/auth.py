@@ -178,11 +178,17 @@ async def get_current_user(
     if api_key:
         # Development bypass: strictly limited to ENVIRONMENT == "development"
         if settings.ENVIRONMENT == "development" and api_key == "dev_key_change_in_production":
-            # Return directly without DB profile — synthetic UUID is not in auth.users
-            return AuthenticatedUser(
-                id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            dev_user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+            dev_profile = await _get_or_create_user_profile(
+                db=db,
+                user_id=dev_user_id,
                 email="dev-admin@talentai.local",
-                role=UserRole.ADMIN.value,
+                default_role=UserRole.ADMIN.value,
+            )
+            return AuthenticatedUser(
+                id=dev_profile.id,
+                email=dev_profile.email,
+                role=dev_profile.role,
                 auth_method="dev_bypass",
             )
 
@@ -216,13 +222,18 @@ async def get_current_user(
                     auth_method="api_key",
                 )
 
-        # Standalone API key — return directly without DB profile
-        # Synthetic system UUID is not in Supabase auth.users, so we cannot
-        # persist a user_profiles row without violating the FK constraint.
-        return AuthenticatedUser(
-            id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        # Standalone API key defaults to server-side admin role
+        admin_system_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
+        admin_profile = await _get_or_create_user_profile(
+            db=db,
+            user_id=admin_system_id,
             email="system-api-key@talentai.local",
-            role=UserRole.ADMIN.value,
+            default_role=UserRole.ADMIN.value,
+        )
+        return AuthenticatedUser(
+            id=admin_system_id,
+            email=admin_profile.email,
+            role=admin_profile.role,
             auth_method="api_key",
         )
 
