@@ -165,7 +165,7 @@ async def process_resume_task(
                 await db.commit()
 
                 logger.info(
-                    f"Job {job_id} {job.status.value} — candidate {candidate_id} created"
+                    f"Job {job_id} {job_status_value(job.status)} — candidate {candidate_id} created"
                 )
 
         except Exception as e:
@@ -213,6 +213,10 @@ def sanitize_job_error(error: Optional[str]) -> Optional[str]:
     if "traceback" in lower or len(error) > 500:
         return "Resume parsing failed due to an internal AI provider error. Please try again."
     return error
+
+
+def job_status_value(status: ProcessingStatus | str) -> str:
+    return status.value if isinstance(status, ProcessingStatus) else str(status)
 
 
 @router.post(
@@ -460,9 +464,9 @@ async def get_job_status(
 
     return JobStatusResponse(
         job_id=job_id,
-        status=job.status.value,
+        status=job_status_value(job.status),
         file_name=job.file_name,
-        created_at=job.created_at.isoformat(),
+        created_at=job.created_at.isoformat() if job.created_at else "",
         completed_at=job.completed_at.isoformat() if job.completed_at else None,
         candidate_id=candidate_id,
         parse_confidence=parse_confidence,
@@ -503,5 +507,5 @@ async def get_job_trace(
         "job_id": job_id,
         "total_duration_ms": total_ms,
         "agent_traces": traces,
-        "overall_status": job.status.value,
+        "overall_status": job_status_value(job.status),
     }
