@@ -1,5 +1,4 @@
 services:
-  # ─── Infrastructure ───────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     environment:
@@ -11,7 +10,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U talentai" ]
+      test: ["CMD-SHELL", "pg_isready -U talentai"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,7 +20,7 @@ services:
     ports:
       - "6379:6379"
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -35,7 +34,6 @@ services:
     environment:
       ANONYMIZED_TELEMETRY: "False"
 
-  # ─── Backend API ──────────────────────────────────────────────────
   api:
     build:
       context: ./backend
@@ -45,12 +43,16 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://talentai:talentai_secret@postgres:5432/talentai_db
+      DATABASE_USER: talentai
+      DATABASE_PASSWORD: talentai_secret
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: talentai_db
       REDIS_URL: redis://redis:6379/0
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      SECRET_KEY: ${SECRET_KEY:-supersecretkey123}
+      SECRET_KEY: ${SECRET_KEY:-replace_me}
       ENVIRONMENT: ${ENVIRONMENT:-development}
     depends_on:
       postgres:
@@ -62,7 +64,6 @@ services:
       - upload_data:/app/uploads
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # ─── Celery Worker (batch processing) ────────────────────────────
   worker:
     build:
       context: ./backend
@@ -70,7 +71,11 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://talentai:talentai_secret@postgres:5432/talentai_db
+      DATABASE_USER: talentai
+      DATABASE_PASSWORD: talentai_secret
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: talentai_db
       REDIS_URL: redis://redis:6379/0
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
@@ -85,7 +90,6 @@ services:
       - upload_data:/app/uploads
     command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=4
 
-  # ─── Frontend ─────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -94,6 +98,7 @@ services:
       - "3000:3000"
     environment:
       VITE_API_URL: http://localhost:8000
+      VITE_API_KEY: ${VITE_API_KEY:-dev_key_change_in_production}
     volumes:
       - ./frontend:/app
       - /app/node_modules

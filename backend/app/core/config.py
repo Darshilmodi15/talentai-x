@@ -1,18 +1,18 @@
-from pydantic_settings import BaseSettings
-from pydantic import Field, field_validator
 from functools import lru_cache
+from pathlib import Path
 from typing import List, Optional
+
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # App
     APP_NAME: str = "TalentAI-X"
     VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     SQL_ECHO: bool = False
 
-    # API Security
     SECRET_KEY: str = "change_this_in_production"
     API_KEY_HEADER: str = "X-API-Key"
     ALLOWED_ORIGINS: List[str] = [
@@ -20,73 +20,71 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "https://talentai-x.vercel.app",
     ]
-    # Allows Vercel preview deployments and local dev ports without editing env.
-    # CORSMiddleware still echoes the concrete Origin; this is not a wildcard response.
-    # Broad by default for hosted demos: Render/Vercel preview URLs change often.
-    # API auth is still enforced separately through X-API-Key.
     ALLOWED_ORIGIN_REGEX: Optional[str] = r"https://.*|http://localhost:\d+|http://127\.0\.0\.1:\d+"
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
-    def parse_allowed_origins(cls, v):
-        if isinstance(v, str):
-            v = v.strip()
-            if v.startswith("[") and v.endswith("]"):
+    def parse_allowed_origins(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            if value.startswith("[") and value.endswith("]"):
                 import json
                 try:
-                    parsed = json.loads(v)
-                    if len(parsed) == 1 and "," in parsed[0]:
-                        return [x.strip().rstrip("/") for x in parsed[0].split(",")]
-                    return [x.rstrip("/") for x in parsed]
-                except Exception:
-                    # fallback to string split
-                    v = v.strip("[]\"'")
-            return [x.strip().rstrip("/") for x in v.split(",")]
-        elif isinstance(v, list):
-            # If parsed as a list of 1 string containing commas
-            if len(v) == 1 and isinstance(v[0], str) and "," in v[0]:
-                return [x.strip().rstrip("/") for x in v[0].split(",")]
-            # Strip trailing slashes just in case
-            return [x.rstrip("/") if isinstance(x, str) else x for x in v]
-        return v
+                    value = json.loads(value)
+                except json.JSONDecodeError:
+                    value = value.strip("[]\"'")
+            if isinstance(value, str):
+                value = value.split(",")
+            return [item.strip().rstrip("/") for item in value]
+        if isinstance(value, list):
+            return [item.rstrip("/") if isinstance(item, str) else item for item in value]
+        return value
 
-    # Database
-    DATABASE_URL: str = "postgresql+asyncpg://talentai:talentai_secret@localhost:5433/talentai_db"
-    DATABASE_URL_SYNC: str = "postgresql://talentai:talentai_secret@localhost:5433/talentai_db"
+    DATABASE_URL: Optional[str] = None
+    DATABASE_URL_SYNC: Optional[str] = None
+    DATABASE_USER: str = "talentai"
+    DATABASE_PASSWORD: str = "talentai_secret"
+    DATABASE_HOST: str = "localhost"
+    DATABASE_PORT: int = 5433
+    DATABASE_NAME: str = "talentai_db"
 
-    # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
-
-    # ChromaDB (local Docker by default; Cloud when CHROMA_API_KEY is provided)
     CHROMA_API_KEY: str = ""
-    CHROMA_TENANT: str = "266a2f4f-9628-4504-95f1-7b3a6c144859"
+    CHROMA_TENANT: str = ""
     CHROMA_DATABASE: str = "talentai_db"
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8001
 
-    # Gemini
     GEMINI_API_KEY: str = Field(default="")
     GEMINI_MODEL: str = "gemini-2.5-flash"
-
-    # Embedding
     EMBEDDING_MODEL: str = "models/embedding-001"
-
-    # Matching thresholds
     MATCH_THRESHOLD_AUTO: float = 0.85
     MATCH_THRESHOLD_REVIEW: float = 0.60
-
-    # File upload
     MAX_UPLOAD_SIZE_MB: int = 10
+    VITE_API_URL: Optional[str] = None
+    VITE_API_KEY: Optional[str] = None
     ALLOWED_MIME_TYPES: List[str] = [
         "application/pdf",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "text/plain",
     ]
-
-    # Rate limiting
     RATE_LIMIT_PER_MINUTE: int = 100
 
+    @model_validator(mode="after")
+    def build_database_urls(self):
+        if not self.DATABASE_URL or not self.DATABASE_URL.startswith("postgresql"):
+            self.DATABASE_URL = (
+                f"postgresql+asyncpg://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"
+                f"@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+            )
+        if not self.DATABASE_URL_SYNC or not self.DATABASE_URL_SYNC.startswith("postgresql"):
+            self.DATABASE_URL_SYNC = (
+                f"postgresql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"
+                f"@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+            )
+        return self
+
     class Config:
-        env_file = ".env"
+        env_file = (Path(__file__).resolve().parents[3] / ".env", ".env")
         case_sensitive = True
 
 
