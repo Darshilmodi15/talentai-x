@@ -14,7 +14,13 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
-from jose import ExpiredSignatureError, JWTClaimsError, JWTError, jwt
+from jose import jwt
+try:
+    from jose.exceptions import ExpiredSignatureError, JWTClaimsError, JWTError
+except ImportError:
+    # Fallback for alternative python-jose packaging
+    from jose import ExpiredSignatureError, JWTError
+    JWTClaimsError = JWTError  # Degrade gracefully: catch claims errors as generic JWT errors
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
