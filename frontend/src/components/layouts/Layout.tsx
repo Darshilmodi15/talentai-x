@@ -64,7 +64,7 @@ export default function Layout() {
             <div className="mb-3 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <p className="truncate text-xs font-semibold text-gray-800">{user?.name}</p>
-                <p className="truncate text-xs capitalize text-gray-500">{user?.isDemo ? 'Demo ' : ''}{user?.role}</p>
+                <p className="truncate text-xs capitalize text-gray-500">{user?.role}</p>
               </div>
               <button onClick={() => void signOut()} className="text-xs font-medium text-indigo-600 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">Sign out</button>
             </div>

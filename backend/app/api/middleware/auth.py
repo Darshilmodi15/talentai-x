@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Security, status
-from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import jwt
 try:
     from jose.exceptions import JWTError
@@ -17,7 +17,6 @@ from app.db.database import AsyncSessionLocal
 from app.db.models.models import UserProfile
 
 bearer_scheme = HTTPBearer(auto_error=False)
-legacy_api_key_header = APIKeyHeader(name=settings.API_KEY_HEADER, auto_error=False)
 
 
 @dataclass(frozen=True)

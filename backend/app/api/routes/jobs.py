@@ -31,7 +31,7 @@ async def create_job(
         description=body.description,
         company=body.company,
         experience_years_min=body.experience_years_min,
-        owner_user_id=user.id,
+        user_id=user.id,
     )
     db.add(job)
     await db.commit()
@@ -44,7 +44,7 @@ async def list_jobs(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Job).where(Job.owner_user_id == user.id).order_by(Job.created_at.desc()).limit(50)
+        select(Job).where(Job.user_id == user.id).order_by(Job.created_at.desc()).limit(50)
     )
     jobs = result.scalars().all()
     return {
@@ -66,7 +66,7 @@ async def get_job(
         job_uuid = uuid.UUID(job_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job_id")
-    job = await db.scalar(select(Job).where(Job.id == job_uuid, Job.owner_user_id == user.id))
+    job = await db.scalar(select(Job).where(Job.id == job_uuid, Job.user_id == user.id))
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return {

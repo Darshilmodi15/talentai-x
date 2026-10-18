@@ -42,26 +42,26 @@ async def init_db():
                 "ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS fk_user_profiles_auth_users"
             )
             await conn.exec_driver_sql(
-                "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS owner_user_id UUID"
+                "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS user_id UUID"
             )
             await conn.exec_driver_sql(
-                "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS owner_user_id UUID"
+                "ALTER TABLE candidates ADD COLUMN IF NOT EXISTS user_id UUID"
             )
             await conn.exec_driver_sql(
-                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS owner_user_id UUID"
+                "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id UUID"
             )
             await conn.exec_driver_sql(
-                "ALTER TABLE match_results ADD COLUMN IF NOT EXISTS owner_user_id UUID"
+                "ALTER TABLE match_results ADD COLUMN IF NOT EXISTS user_id UUID"
             )
             await conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS ix_parse_jobs_owner_user_id ON parse_jobs(owner_user_id)"
+                "CREATE INDEX IF NOT EXISTS ix_parse_jobs_user_id ON parse_jobs(user_id)"
             )
             await conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS ix_candidates_owner_user_id ON candidates(owner_user_id)"
+                "CREATE INDEX IF NOT EXISTS ix_candidates_user_id ON candidates(user_id)"
             )
             await conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS ix_jobs_owner_user_id ON jobs(owner_user_id)"
+                "CREATE INDEX IF NOT EXISTS ix_jobs_user_id ON jobs(user_id)"
             )
             await conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS ix_match_results_owner_user_id ON match_results(owner_user_id)"
+                "CREATE INDEX IF NOT EXISTS ix_match_results_user_id ON match_results(user_id)"
             )

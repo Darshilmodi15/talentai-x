@@ -71,7 +71,7 @@ async def get_hitl_queue(
         .join(MatchResult, MatchResult.id == HITLReviewItem.match_result_id)
         .where(
             HITLReviewItem.resolved == False,
-            MatchResult.owner_user_id == user.id,
+            MatchResult.user_id == user.id,
         )
         .order_by(HITLReviewItem.created_at.desc())
         .limit(50)
@@ -109,7 +109,7 @@ async def resolve_hitl_item(
     item = await db.scalar(
         select(HITLReviewItem)
         .join(MatchResult, MatchResult.id == HITLReviewItem.match_result_id)
-        .where(HITLReviewItem.id == item_uuid, MatchResult.owner_user_id == user.id)
+        .where(HITLReviewItem.id == item_uuid, MatchResult.user_id == user.id)
     )
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -132,22 +132,22 @@ async def system_stats(
     db: AsyncSession = Depends(get_db),
 ):
     total_candidates = await db.scalar(
-        select(func.count()).select_from(Candidate).where(Candidate.owner_user_id == user.id)
+        select(func.count()).select_from(Candidate).where(Candidate.user_id == user.id)
     )
     total_jobs = await db.scalar(
-        select(func.count()).select_from(ParseJob).where(ParseJob.owner_user_id == user.id)
+        select(func.count()).select_from(ParseJob).where(ParseJob.user_id == user.id)
     )
     total_matches = await db.scalar(
-        select(func.count()).select_from(MatchResult).where(MatchResult.owner_user_id == user.id)
+        select(func.count()).select_from(MatchResult).where(MatchResult.user_id == user.id)
     )
     hitl_pending = await db.scalar(
         select(func.count()).select_from(HITLReviewItem)
         .join(MatchResult, MatchResult.id == HITLReviewItem.match_result_id)
-        .where(HITLReviewItem.resolved == False, MatchResult.owner_user_id == user.id)
+        .where(HITLReviewItem.resolved == False, MatchResult.user_id == user.id)
     )
     bias_flagged = await db.scalar(
         select(func.count()).select_from(MatchResult)
-        .where(MatchResult.bias_flagged == True, MatchResult.owner_user_id == user.id)
+        .where(MatchResult.bias_flagged == True, MatchResult.user_id == user.id)
     )
 
     return {

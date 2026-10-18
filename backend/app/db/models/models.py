@@ -59,7 +59,7 @@ class ParseJob(Base):
     __tablename__ = "parse_jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     status: Mapped[ProcessingStatus] = mapped_column(
         SAEnum(ProcessingStatus), default=ProcessingStatus.QUEUED
     )
@@ -82,7 +82,7 @@ class Candidate(Base):
     __tablename__ = "candidates"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     parse_job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("parse_jobs.id"), nullable=False)
 
     # Basic Info
@@ -157,7 +157,7 @@ class Job(Base):
     __tablename__ = "jobs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text)
     company: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -177,7 +177,7 @@ class MatchResult(Base):
     __tablename__ = "match_results"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     candidate_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("candidates.id"))
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id"))
 

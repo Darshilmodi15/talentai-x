@@ -11,7 +11,6 @@ type AppUser = {
   email: string
   role: UserRole
   name: string
-  isDemo?: boolean
 }
 
 type AuthContextValue = {
@@ -20,12 +19,10 @@ type AuthContextValue = {
   loading: boolean
   signIn: (email: string, password: string) => Promise<void>
   signUp: (name: string, email: string, password: string, role: UserRole) => Promise<void>
-  continueAsDemo: (role: UserRole) => void
   signOut: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
-const DEMO_STORAGE_KEY = 'talentai-demo-user'
 
 const toAppUser = (user: User, metadata: Record<string, unknown> = {}): AppUser => ({
   id: user.id,
@@ -41,8 +38,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!supabase) {
-      const stored = localStorage.getItem(DEMO_STORAGE_KEY)
-      if (stored) setUser(JSON.parse(stored))
       setLoading(false)
       return
     }
@@ -68,12 +63,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     loading,
     signIn: async (email, password) => {
-      if (!supabase) throw new Error('Supabase Auth is not configured. Use demo access or add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
+      if (!supabase) throw new Error('Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to the frontend environment.')
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
     },
     signUp: async (name, email, password, role) => {
-      if (!supabase) throw new Error('Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
+      if (!supabase) throw new Error('Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to the frontend environment.')
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -81,19 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       if (error) throw error
     },
-    continueAsDemo: (role) => {
-      const demoUser: AppUser = {
-        id: `demo-${role}`,
-        email: role === 'recruiter' ? 'demo.hr@talentai.local' : 'demo.user@talentai.local',
-        role,
-        name: role === 'recruiter' ? 'Demo Recruiter' : 'Demo User',
-        isDemo: true,
-      }
-      localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(demoUser))
-      setUser(demoUser)
-    },
     signOut: async () => {
-      localStorage.removeItem(DEMO_STORAGE_KEY)
       setAccessToken(null)
       if (supabase) {
         const { error } = await supabase.auth.signOut()
