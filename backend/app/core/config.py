@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     CHROMA_HOST: str = "localhost"
     CHROMA_PORT: int = 8001
 
+    # Supabase Auth
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_JWT_SECRET: Optional[str] = None
+    VITE_SUPABASE_URL: Optional[str] = None
+    VITE_SUPABASE_ANON_KEY: Optional[str] = None
+
     GEMINI_API_KEY: str = Field(default="")
     GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_MODEL_FALLBACKS: List[str] = [
@@ -78,6 +84,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def build_database_urls(self):
+        if not self.SUPABASE_URL and self.VITE_SUPABASE_URL:
+            self.SUPABASE_URL = self.VITE_SUPABASE_URL
+
         if not self.DATABASE_URL or not self.DATABASE_URL.startswith("postgresql"):
             self.DATABASE_URL = (
                 f"postgresql+asyncpg://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"

@@ -5,7 +5,11 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from jose import jwt
+try:
+    from jose.exceptions import JWTError
+except ImportError:
+    from jose import JWTError
 from sqlalchemy import select
 
 from app.core.config import settings

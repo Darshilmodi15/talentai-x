@@ -39,6 +39,9 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         if engine.url.get_backend_name() == "postgresql":
             await conn.exec_driver_sql(
+                "ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS fk_user_profiles_auth_users"
+            )
+            await conn.exec_driver_sql(
                 "ALTER TABLE parse_jobs ADD COLUMN IF NOT EXISTS owner_user_id UUID"
             )
             await conn.exec_driver_sql(
