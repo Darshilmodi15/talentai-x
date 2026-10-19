@@ -48,7 +48,19 @@ def gemini_model_candidates() -> list[str]:
     available = available_gemini_models()
     if available is None:
         return candidates
-    return [candidate for candidate in candidates if candidate in available]
+    preferred = [candidate for candidate in candidates if candidate in available]
+    discovered = sorted(
+        model
+        for model in available
+        if model.startswith("gemini-") and model not in preferred
+    )
+    if discovered:
+        logger.info(
+            "Gemini model candidates for this key: preferred=%s discovered_fallbacks=%s",
+            preferred,
+            discovered,
+        )
+    return preferred + discovered
 
 
 def resolve_gemini_model() -> str:
