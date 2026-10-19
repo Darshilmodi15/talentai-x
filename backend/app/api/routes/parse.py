@@ -7,6 +7,7 @@ GET  /api/v1/jobs/{job_id}/trace — agent execution trace
 """
 import uuid
 import os
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -27,6 +28,7 @@ from app.services.candidate_service import save_candidate_from_state
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
+logger = logging.getLogger(__name__)
 
 
 async def enforce_upload_quota(
@@ -459,9 +461,12 @@ async def get_job_status(
     if status_value in {ProcessingStatus.COMPLETED.value, ProcessingStatus.PARTIAL.value}:
         from sqlalchemy import select
         result = await db.execute(
-            select(Candidate).where(Candidate.parse_job_id == job_uuid)
+            select(Candidate)
+            .where(Candidate.parse_job_id == job_uuid)
+            .order_by(Candidate.id.desc())
+            .limit(1)
         )
-        candidate = result.scalar_one_or_none()
+        candidate = result.scalars().first()
         if candidate:
             candidate_id = str(candidate.id)
             parse_confidence = candidate.parse_confidence
@@ -471,6 +476,14 @@ async def get_job_status(
             skills_count = len(skills) if isinstance(skills, (list, tuple, set, dict)) else None
             parsed = candidate.parsed_data
             layout = parsed.get("layout_type") if isinstance(parsed, dict) else None
+
+    logger.info(
+        "Returning parse status job_id=%s user_id=%s status=%s candidate_id=%s",
+        job_id,
+        user.id,
+        status_value,
+        candidate_id,
+    )
 
     return {
         "job_id": job_id,

@@ -96,12 +96,19 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 import logging
 import re
+import uuid
 
 logger = logging.getLogger(__name__)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.exception(f"Unhandled Server Error on {request.method} {request.url}")
+    request_id = str(uuid.uuid4())
+    logger.exception(
+        "Unhandled Server Error request_id=%s method=%s url=%s",
+        request_id,
+        request.method,
+        request.url,
+    )
     origin = request.headers.get("origin")
     headers = {}
     if origin and (
@@ -118,9 +125,10 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={
             "success": False,
             "error_code": "INTERNAL_SERVER_ERROR",
-            "message": "An unexpected server error occurred. Please try again later."
+            "message": "An unexpected server error occurred. Please try again later.",
+            "request_id": request_id,
         },
-        headers=headers,
+        headers={**headers, "X-Request-ID": request_id},
     )
 
 # Routers
