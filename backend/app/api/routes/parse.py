@@ -15,7 +15,7 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Backgro
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -399,16 +399,25 @@ async def get_job_status(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid job_id format")
 
-    job = await db.scalar(
-        select(ParseJob).where(ParseJob.id == job_uuid, ParseJob.user_id == user.id)
+    job_result = await db.execute(
+        text(
+            """
+            SELECT id, status, file_name, created_at, completed_at, error_message
+            FROM parse_jobs
+            WHERE id = :job_id AND user_id = :user_id
+            """
+        ),
+        {"job_id": job_uuid, "user_id": user.id},
     )
+    job = job_result.mappings().first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    status_value = job_status_value(job.status)
+    status_value = job_status_value(job["status"])
     is_failed = status_value == ProcessingStatus.FAILED.value
+    error_message = job["error_message"]
 
-    if is_failed and job.error_message and "Gemini quota exceeded" in str(job.error_message):
+    if is_failed and error_message and "Gemini quota exceeded" in str(error_message):
         return JSONResponse(
             status_code=429,
             content={
@@ -418,7 +427,7 @@ async def get_job_status(
             }
         )
 
-    if is_failed and job.error_message and "Gemini model not found" in str(job.error_message):
+    if is_failed and error_message and "Gemini model not found" in str(error_message):
         return JSONResponse(
             status_code=404,
             content={
@@ -428,7 +437,7 @@ async def get_job_status(
             }
         )
 
-    if is_failed and job.error_message and "Gemini JSON format invalid" in str(job.error_message):
+    if is_failed and error_message and "Gemini JSON format invalid" in str(error_message):
         return JSONResponse(
             status_code=500,
             content={
@@ -438,8 +447,8 @@ async def get_job_status(
             }
         )
 
-    if is_failed and job.error_message and any(
-        token in str(job.error_message).lower() for token in ["permissiondenied", "permission denied", "denied access", "403"]
+    if is_failed and error_message and any(
+        token in str(error_message).lower() for token in ["permissiondenied", "permission denied", "denied access", "403"]
     ):
         return JSONResponse(
             status_code=403,
@@ -461,20 +470,27 @@ async def get_job_status(
     if status_value in {ProcessingStatus.COMPLETED.value, ProcessingStatus.PARTIAL.value}:
         from sqlalchemy import select
         result = await db.execute(
-            select(Candidate)
-            .where(Candidate.parse_job_id == job_uuid)
-            .order_by(Candidate.id.desc())
-            .limit(1)
+            text(
+                """
+                SELECT id, parse_confidence, resume_language,
+                       ai_content_probability, skills_canonical, parsed_data
+                FROM candidates
+                WHERE parse_job_id = :job_id
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {"job_id": job_uuid},
         )
-        candidate = result.scalars().first()
+        candidate = result.mappings().first()
         if candidate:
-            candidate_id = str(candidate.id)
-            parse_confidence = candidate.parse_confidence
-            lang = candidate.resume_language
-            ai_prob = candidate.ai_content_probability
-            skills = candidate.skills_canonical
+            candidate_id = str(candidate["id"])
+            parse_confidence = candidate["parse_confidence"]
+            lang = candidate["resume_language"]
+            ai_prob = candidate["ai_content_probability"]
+            skills = candidate["skills_canonical"]
             skills_count = len(skills) if isinstance(skills, (list, tuple, set, dict)) else None
-            parsed = candidate.parsed_data
+            parsed = candidate["parsed_data"]
             layout = parsed.get("layout_type") if isinstance(parsed, dict) else None
 
     logger.info(
@@ -487,17 +503,17 @@ async def get_job_status(
 
     return {
         "job_id": job_id,
-        "status": job_status_value(job.status),
-        "file_name": str(job.file_name or "upload"),
-        "created_at": isoformat_or_empty(job.created_at),
-        "completed_at": isoformat_or_empty(job.completed_at) if job.completed_at else None,
+        "status": status_value,
+        "file_name": str(job["file_name"] or "upload"),
+        "created_at": isoformat_or_empty(job["created_at"]),
+        "completed_at": isoformat_or_empty(job["completed_at"]) if job["completed_at"] else None,
         "candidate_id": candidate_id,
         "parse_confidence": parse_confidence,
         "layout_detected": layout,
         "resume_language": lang,
         "ai_content_probability": ai_prob,
         "skills_found": skills_count,
-        "error_message": sanitize_job_error(job.error_message),
+        "error_message": sanitize_job_error(error_message),
         "partial_result": None,
     }
 

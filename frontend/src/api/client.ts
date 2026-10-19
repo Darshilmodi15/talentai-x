@@ -26,7 +26,12 @@ const normalizeApiError = (error: AxiosError<any>) => {
   if (!error.response) return 'Unable to connect to server. Make sure the backend is running.'
 
   const data = error.response.data
-  if (typeof data?.message === 'string') return data.message
+  if (typeof data?.message === 'string') {
+    const requestId = error.response.status >= 500
+      ? error.response.headers?.['x-request-id'] || data?.request_id
+      : undefined
+    return requestId ? `${data.message} (request ${requestId})` : data.message
+  }
   if (typeof data?.detail === 'string') return data.detail
   if (Array.isArray(data?.detail)) {
     return data.detail
@@ -37,7 +42,12 @@ const normalizeApiError = (error: AxiosError<any>) => {
       .join('; ')
   }
   if (typeof data === 'string') return data
-  if (error.response.status >= 500) return 'Server error. Please try again; if it repeats, check backend logs.'
+  if (error.response.status >= 500) {
+    const requestId = error.response.headers?.['x-request-id'] || data?.request_id
+    return requestId
+      ? `Server error (request ${requestId}). Please check the backend logs.`
+      : 'Server error. Please try again; if it repeats, check backend logs.'
+  }
   return `Request failed (${error.response.status})`
 }
 
