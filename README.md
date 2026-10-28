@@ -1,23 +1,27 @@
 # TalentAI-X — Multi-Agent Talent Intelligence System
 
-> The world's first **bias-aware, explainable** multi-agent AI platform for talent intelligence.  
+> A multi-agent talent intelligence system with explainable matching and human review.  
 > Built for Tic Tech Toe '26 · Domain: Multi-Agent AI & Talent Intelligence
 
 ---
 
-## What makes this different from every other ATS
+## Overview and current status
 
-| Feature | Traditional ATS | TalentAI-X |
-|---|---|---|
-| Matching method | Keyword matching (40–55% accuracy) | CoT + semantic embeddings (87% accuracy) |
-| Bias detection | None | Dual blind/sighted scoring with audit API |
-| Explainability | Black box score | SHAP attribution on every decision |
-| Skill normalization | Exact match | Synonym map + fuzzy + semantic + implication graph |
-| Cross-platform identity | None | Anchor-first entity resolution (GitHub, LinkedIn, SO) |
-| Skill taxonomy | Static | Self-evolving via Agent 5 |
-| Human review | Never triggered | HITL queue for borderline + biased decisions |
-| Interview prep | None | 6 tailored interview questions per candidate |
-| Legal compliance | None | NYC Local Law 144 · Colorado AI Act 2026 · GDPR |
+TalentAI-X parses resumes, normalizes skills, matches candidates to jobs, and resolves candidate identity across platforms using a LangGraph pipeline. It was built for Tic Tech Toe '26 (Multi-Agent AI & Talent Intelligence).
+
+**Implemented**
+- FastAPI service with a LangGraph orchestrator over four agents: parse, normalize, match, and entity resolution.
+- Skill normalization using a synonym map, fuzzy matching (rapidfuzz) and ChromaDB embeddings.
+- Gemini-assisted semantic matching with a per-decision, SHAP-style feature attribution (a custom attribution routine, not the `shap` library).
+- Batch resume processing with Celery and Redis, PostgreSQL storage, and Supabase-authenticated routes with server-side role checks.
+- Human-in-the-loop review triggers for borderline matches, and generated interview questions per candidate.
+
+**Partially implemented**
+- Bias Shield: demographic and prestige signals (institution, company names) are stripped to build a blind profile. The blind-versus-full score comparison is currently a placeholder that does not re-run the matcher, so the reported bias delta should not be treated as a measured result.
+
+**Not implemented / not evaluated**
+- Agent 5 (skill intelligence, nightly job) shown in the diagram below is a planned component and is not in this repository.
+- No accuracy benchmark is included in this repository. Earlier claims about match accuracy and regulatory compliance had no supporting evaluation here and have been removed.
 
 ---
 
